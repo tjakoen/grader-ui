@@ -53,9 +53,9 @@ behind the "built with Claude" claim is the README badge + footer and the flagsh
 
 ## Repo-specific rules
 
-- **The engine is config-driven, not hardcoded.** All paths and the section list come from
-  `lib/config.mjs` reading `grader.config.json`. Never reintroduce absolute paths or a per-tool
-  section array.
+- **Sections are auto-discovered, not hardcoded.** `lib/config.mjs` scans `classes/` and derives each
+  section from ground truth (folder name, git remote, `grader/assignments.json`). `grader.config.json`
+  is optional overrides only. Never reintroduce absolute paths or a per-tool section array.
 - **No student PII in the repo, ever.** `classes/`, `out/`, and `grader.config.json` are gitignored
   because they hold student data. Confirm nothing under those is staged before any commit.
 - **GRAIN provenance is load-bearing.** AI-proposed values render in grain type and flip to clean on

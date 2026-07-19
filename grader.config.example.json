@@ -1,8 +1,11 @@
 {
-  "//": "Copy to grader.config.json and fill in your own sections. classesDir holds the teacher-repo clones (flat).",
+  "//": "OPTIONAL. Sections are auto-discovered by scanning classes/ for teacher-<code>-<section>-<name> clones. This file only carries overrides. Copy to grader.config.json to use; delete any key you do not need.",
   "classesDir": "classes",
   "outDir": "out",
-  "sections": [
-    { "key": "SUBJECT-SECTION", "subject": "SUBJECT - Stack", "section": "SECTION", "org": "YOUR-ORG", "repo": "teacher-subject-section-you", "acts": ["m1a1"] }
-  ]
+  "labels": {
+    "6APSI": "6APSI JavaScript / React",
+    "6ADET": "6ADET Flutter / Dart",
+    "6INTROWEB": "6INTROWEB HTML / CSS / JS"
+  },
+  "exclude": []
 }

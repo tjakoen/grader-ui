@@ -2,15 +2,19 @@
 
 ## Setup
 
-1. `cp grader.config.example.json grader.config.json` and edit `sections`
-   (one entry per teacher repo). `acts` lists the activities that publish
-   preview screenshots (design activities); omit it for test-only sections.
-2. Clone each teacher control-center repo, flat, into `classes/`:
+1. Clone each teacher control-center repo, flat, into `classes/`:
    `classes/teacher-6apsi-2240-tjakoen/`, etc. No per-section subfolders.
-3. `node src/build-dashboard.mjs` writes `out/grading-review.html`. Open it.
+2. `node src/build-dashboard.mjs` writes `out/grading-review.html`. Open it.
 
-`classes/`, `out/`, and `grader.config.json` are gitignored: they hold student
-PII and must never be committed.
+That is the whole setup. Sections are **auto-discovered** from `classes/`: the
+folder name gives the subject and section, the git remote gives the org, and each
+repo's `grader/assignments.json` says which activities have screenshots
+(`feedback: "project"`). No config file to write.
+
+Optional overrides live in `grader.config.json` (copy from
+`grader.config.example.json`): `labels` for prettier tab names, `classesDir` /
+`outDir` to relocate, `exclude` to skip a folder. `classes/`, `out/`, and
+`grader.config.json` are gitignored: they hold student PII and must never be committed.
 
 ## Everyday flow
 

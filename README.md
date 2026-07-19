@@ -34,19 +34,20 @@ lib/        config.mjs - single source of paths + sections
 docs/       grain-for-ai, commands, usage
 classes/    gitignored - your teacher-repo clones (flat, PII)
 out/        gitignored - generated dashboard + assets + reports
-grader.config.json          gitignored - your real sections
-grader.config.example.json  committed template
+grader.config.json          gitignored, OPTIONAL - overrides only (labels, dirs, exclude)
+grader.config.example.json  committed example of those overrides
 ```
 
 ## Quickstart
 
 ```bash
-cp grader.config.example.json grader.config.json   # then edit your sections
 # clone each teacher repo (flat) into classes/:
 #   classes/teacher-<subject>-<section>-<you>/
 node src/build-dashboard.mjs        # -> out/grading-review.html
 open out/grading-review.html
 ```
+
+Sections are **auto-discovered** from *classes/*: the folder name gives the subject and section, the git remote gives the org, and each repo's *grader/assignments.json* says which activities have screenshots. There is nothing to configure. Drop a teacher clone in *classes/*, rebuild, and it shows up. *grader.config.example.json* documents the optional overrides (nicer tab labels, a different classes/out dir, an exclude list); copy it to *grader.config.json* only if you want them.
 
 Screenshots and the code viewer are optional data passes (`node src/fetch-shots.mjs`, `node src/fetch-code.mjs`; both need `gh auth`). Full walkthrough in [docs/usage.md](docs/usage.md); the AI action vocabulary is in [docs/commands.md](docs/commands.md); how the design system applies is in [docs/grain-for-ai.md](docs/grain-for-ai.md).
 
