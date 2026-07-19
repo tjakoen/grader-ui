@@ -16,7 +16,8 @@ const grainFont = f => "data:font/woff2;base64," + fs.readFileSync(fileURLToPath
 const GRAIN = grainCss("variables.css")
   .replace(/@import\s+"themes\/[^"]+";\s*/g, "")                                          // drop optional flavors (Sourdough is the :root default)
   .replace(/url\("\/fonts\/([^"]+\.woff2)"\)/g, (_m, f) => 'url("' + grainFont(f) + '")')  // embed Redaction woff2 offline
-  + "\n" + grainCss("grain.css");                                                          // the grade-as-signal mechanism (data-grade / .field)
+  + "\n" + grainCss("grain.css")                                                           // the grade-as-signal mechanism (data-grade / .field)
+  + "\n" + grainCss("themes/baguette.css");                                                // the Baguette flavor (data-theme="baguette")
 
 const parse = (line) => { const o=[];let c="",q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(q){if(ch==='"'&&line[i+1]==='"'){c+='"';i++;}else if(ch==='"')q=false;else c+=ch;}else if(ch==='"')q=true;else if(ch===','){o.push(c);c="";}else c+=ch;}o.push(c);return o;};
 const dec = (s) => { try { return s ? Buffer.from(s,"base64").toString("utf8") : ""; } catch { return ""; } };
@@ -102,7 +103,7 @@ console.log(`grading-review.html written | ${DATA.sections.length} sections | ${
 
 function TEMPLATE(data) {
   const json = JSON.stringify(data).replace(/</g,"\\u003c");
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  return `<!doctype html><html lang="en" data-theme="baguette"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HAU Grading Review</title>
 <style>${CSS()}</style></head><body>
 <div id="app"></div>
@@ -196,7 +197,8 @@ const $=(s,r=document)=>r.querySelector(s), el=(t,c,h)=>{const e=document.create
 const esc=s=>String(s==null?"":s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 let cur=0, q="", mode="book", revAct=null;
 const app=$("#app");
-function cellColor(pct){ if(pct==null)return""; const g=Math.round(pct*120); return "background:hsl("+g+",55%,"+(matchMedia("(prefers-color-scheme:dark)").matches?"18%":"90%")+")"; }
+function curScheme(){ return document.documentElement.getAttribute("data-color-scheme")||(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light"); }
+function cellColor(pct){ if(pct==null)return""; const g=Math.round(pct*120); const dark=curScheme()==="dark"; return "background:hsl("+g+"deg "+(dark?"30%":"55%")+" "+(dark?"24%":"90%")+")"; }
 // ---- review decisions (persisted in this browser) ----
 const DKEY="hau-grade-decisions-v1";
 let DEC={}; try{DEC=JSON.parse(localStorage.getItem(DKEY)||"{}")}catch(e){DEC={}}

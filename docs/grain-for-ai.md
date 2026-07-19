@@ -32,6 +32,15 @@ the dashboard `<style>`:
   file, no CDN or node_modules at view time).
 - `styles/grain.css` - the grade-as-signal MECHANISM: `[data-grade="grain"]`,
   `.field` (grain at rest, clean on focus), `[data-commit="pending"]`.
+- `styles/themes/baguette.css` - the active flavor (crisp near-white / near-black
+  with a soft-blue accent), applied via `data-theme="baguette"` on the root.
+  Sourdough is grain's hueless default; grader-ui opts into Baguette. Light and dark
+  still follow grain's `data-color-scheme` axis.
+
+The grade cells (green pass to red fail) are grader-ui's own, not grain's, since
+grain is monochrome by doctrine. Their tint is scheme-aware (`curScheme()` reads
+the live `data-color-scheme`, so a manual theme toggle recolors them, and dark uses
+a softer hsl so the colors do not go muddy).
 
 grader-ui adds only a thin bridge (its layout aliases like `--bg`, `--acc` mapped
 onto grain's real tokens) plus the few things grain is monochrome about on
