@@ -1,46 +1,52 @@
 # GRAIN for AI
 
-How an AI applies the GRAIN design system to this surface. GRAIN's home and full
-docs live in the BREAD stack (`/grain`); this file is the working spec a coding
-agent reads before touching the dashboard.
+How this dashboard uses the GRAIN design system. The short version: it does not
+re-implement the look, it **consumes the real package**. `@tjakoen/grain` is a
+dependency, and its CSS and fonts are inlined into the dashboard at build time.
+GRAIN's home and full docs live in the BREAD stack (`/grain`); this file is the
+working spec a coding agent reads before touching the theme.
 
 ## The one law: provenance is shown in the type
 
-- **Grain type** = the AI is acting, or a value is in transit / proposed / a
-  draft. Use it for any model-generated grade or feedback that has **not** been
+- **Grain type** = the AI is acting, or a value is in transit, proposed, a draft.
+  Use it for any model-generated grade or feedback that has **not** been
   human-confirmed.
 - **Clean type** = a human wrote it, or it has committed. Use it the moment the
   teacher approves or edits a value.
 
-No badges, no "AI" labels: switching provenance is a font-family swap (a class
-change). In this dashboard that maps exactly onto the model: an AI-proposed
-grade renders in grain type; approving or editing flips it to clean type.
+No badges, no "AI" labels: switching provenance is a font-family swap. In this
+dashboard the AI-proposed score renders in grain type; approving or editing flips
+it to clean type.
 
-## Sourdough tokens (default theme)
+## Where the theme comes from (do not fork it)
 
-```css
---paper: #E2E0D8;  --paper-2: #E8E6DF;  --panel: #E8E6DF;
---ink: #1C1B17;    --ink-muted: #6E6C64;  --ink-faint: #ABA89F;
---hairline: #1C1B17;  --line-soft: rgba(28,27,23,.14);  --color-accent: var(--ink);
---s1:.25rem; --s2:.5rem; --s3:.75rem; --s4:1rem; --s6:1.5rem; --s8:2rem; --s12:3rem; --s16:4rem;
---radius: 4px;  --rule: 1.5px solid var(--hairline);  --border: 1px solid var(--hairline);
+`src/build-dashboard.mjs` resolves grain's CSS from the installed package with
+`import.meta.resolve('@tjakoen/grain/styles/...')`, reads it, and inlines it into
+the dashboard `<style>`:
 
---font-smooth: "Redaction", "Times New Roman", Georgia, serif;   /* clean type */
---font-grain:  "Redaction 50", "Times New Roman", Georgia, serif; /* grain type */
---font-accent: "Redaction 70", "Times New Roman", Georgia, serif;
-```
+- `styles/variables.css` - the Sourdough tokens (paper, ink, the `--font-smooth`
+  / `--font-grain` / `--font-accent` grade families, spacing, radius) and the
+  light/dark scheme. Its optional flavor `@import`s are stripped and its
+  `@font-face` `url("/fonts/*.woff2")` are rewritten to embedded `data:` URIs, so
+  the dashboard is one offline file (it holds student PII and opens as a local
+  file, no CDN or node_modules at view time).
+- `styles/grain.css` - the grade-as-signal MECHANISM: `[data-grade="grain"]`,
+  `.field` (grain at rest, clean on focus), `[data-commit="pending"]`.
 
-Redaction 50 / 70 are progressively grainier grades of the same face, so
-"more machine / more draft" reads as more grain. The fonts must be loaded for
-the metaphor to render; without them it falls back to serif and the distinction
-degrades to color only.
+grader-ui adds only a thin bridge (its layout aliases like `--bg`, `--acc` mapped
+onto grain's real tokens) plus the few things grain is monochrome about on
+purpose but a grading matrix genuinely needs (status hues, syntax colors). Dark
+mode follows grain's `data-color-scheme` axis.
 
 ## Rules for the agent
 
-1. Never invent tokens. Use the variables above; re-skin only by overriding them.
-2. Render any un-reviewed model output in `--font-grain`. On approve/edit, swap
-   to `--font-smooth`.
-3. Keep the human-review gate visible: in-transit values look in-transit.
-
-> TODO: expand with the component-class catalog and the Intent -> RenderOps
-> vocabulary once GRAIN's component docs are mirrored here.
+1. **Never re-fork the theme.** Tokens, fonts, and the grade mechanism come from
+   `@tjakoen/grain`. If the look needs to change, change it in grain and bump the
+   dependency, do not hardcode values back into the dashboard.
+2. **Use grain's mechanism for provenance,** not a bespoke class: mark un-reviewed
+   model output with `data-grade="grain"` (or `.field` for an editable value); it
+   settles to clean type when a human commits.
+3. **Keep the offline guarantee.** Anything grain references externally (fonts)
+   must be embedded at build time. No CDN or node_modules reference may survive
+   into the generated HTML.
+4. **Only grain.** grader-ui needs `@tjakoen/grain`, not batch/mill/proof.

@@ -25,9 +25,10 @@ The full rulebook is **[AI-DEVELOPMENT.md](https://tjakoen.github.io/standards/a
   trailer. The receipt is the README badge + footer, not commit metadata.
 - **AI multiplies, it doesn't add.** The AI types; I keep the judgment, the architecture, the final
   call. If I can't explain it, I didn't build it.
-- **Definition of done = code + docs synced + green gate.** For this repo the gate is
-  `node --check lib/config.mjs src/*.mjs` and a clean `node src/build-dashboard.mjs` (it must still
-  build the dashboard from a real `classes/`). Not one of these, all of them.
+- **Definition of done = code + docs synced + green gate.** For this repo the gate is `npm install`
+  (the build imports `@tjakoen/grain`), `node --check lib/config.mjs src/*.mjs`, and a clean
+  `node src/build-dashboard.mjs` (it must still build the dashboard from a real `classes/`). Not one
+  of these, all of them.
 - **Write the decision down.** Keep a short record of *why* non-obvious choices were made so the next
   session inherits the reasoning.
 - **Hand off when a task finishes.** Gate green, committed, decisions recorded, then emit a compact
@@ -58,8 +59,11 @@ behind the "built with Claude" claim is the README badge + footer and the flagsh
   is optional overrides only. Never reintroduce absolute paths or a per-tool section array.
 - **No student PII in the repo, ever.** `classes/`, `out/`, and `grader.config.json` are gitignored
   because they hold student data. Confirm nothing under those is staged before any commit.
-- **GRAIN provenance is load-bearing.** AI-proposed values render in grain type and flip to clean on
-  human edit. See [docs/grain-for-ai.md](docs/grain-for-ai.md); don't collapse the two.
+- **GRAIN is a real dependency, not a fork.** The theme (tokens, fonts, grade mechanism) is inlined
+  from `@tjakoen/grain` at build time and embedded offline (no CDN/node_modules in the generated HTML).
+  Never hardcode grain's tokens back into the dashboard; change the look in grain and bump the dep.
+  Provenance uses grain's `data-grade` (AI-proposed = grain type, flips to clean on human edit). See
+  [docs/grain-for-ai.md](docs/grain-for-ai.md); don't collapse the two.
 
 ## Docs / structure
 

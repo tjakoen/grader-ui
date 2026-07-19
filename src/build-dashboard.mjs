@@ -4,9 +4,19 @@
 // Contains student PII -> stays a LOCAL file; do not publish/host.
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { SECTIONS as CFG, paths } from "../lib/config.mjs";
 const SECTIONS = CFG.map(s => ({ key: s.key, subject: s.subject, section: s.section, dir: s.dir }));
+
+// GRAIN theme, consumed from the installed @tjakoen/grain package at BUILD time and inlined, so
+// the dashboard stays a single self-contained offline file (no node_modules / CDN at view time).
+const grainCss = n => fs.readFileSync(fileURLToPath(import.meta.resolve("@tjakoen/grain/styles/" + n)), "utf8");
+const grainFont = f => "data:font/woff2;base64," + fs.readFileSync(fileURLToPath(import.meta.resolve("@tjakoen/grain/fonts/" + f))).toString("base64");
+const GRAIN = grainCss("variables.css")
+  .replace(/@import\s+"themes\/[^"]+";\s*/g, "")                                          // drop optional flavors (Sourdough is the :root default)
+  .replace(/url\("\/fonts\/([^"]+\.woff2)"\)/g, (_m, f) => 'url("' + grainFont(f) + '")')  // embed Redaction woff2 offline
+  + "\n" + grainCss("grain.css");                                                          // the grade-as-signal mechanism (data-grade / .field)
 
 const parse = (line) => { const o=[];let c="",q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(q){if(ch==='"'&&line[i+1]==='"'){c+='"';i++;}else if(ch==='"')q=false;else c+=ch;}else if(ch==='"')q=true;else if(ch===','){o.push(c);c="";}else c+=ch;}o.push(c);return o;};
 const dec = (s) => { try { return s ? Buffer.from(s,"base64").toString("utf8") : ""; } catch { return ""; } };
@@ -103,26 +113,13 @@ ${fs.existsSync(paths.codeBundle) ? '<script src="grading-review-code.js"></scri
 }
 
 function CSS(){ return `
-@import url('https://cdn.jsdelivr.net/npm/@fontsource/redaction@5/index.css');
-@import url('https://cdn.jsdelivr.net/npm/@fontsource/redaction-50@5/index.css');
-@import url('https://cdn.jsdelivr.net/npm/@fontsource/redaction-70@5/index.css');
-/* GRAIN / Sourdough theme. Provenance is shown in the type: clean (Redaction) = human/committed, grain (Redaction 50) = AI/in-transit. */
-:root{
-  --font-smooth:"Redaction","Times New Roman",Georgia,serif;
-  --font-grain:"Redaction 50","Times New Roman",Georgia,serif;
-  --font-accent:"Redaction 70","Times New Roman",Georgia,serif;
-  --radius:4px;
-  --bg:#E2E0D8;--panel:#E8E6DF;--panel2:#DAD7CD;--line:#C9C6BB;--ink:#1C1B17;--mut:#6E6C64;
-  --acc:#1C1B17;--on-acc:#F2F0E9;--good:#3f6d3a;--warn:#8a6410;--bad:#a12f22;--held:#5a3fa0;
-  --tc:#6a7a52;--ts:#9a5b2a;--tn:#4a7a4a;--tk:#3a5a8a;--tg:#5a7a6a}
-@media(prefers-color-scheme:dark){:root{
-  --bg:#1C1B17;--panel:#24231E;--panel2:#2C2A24;--line:#3A382F;--ink:#E2E0D8;--mut:#ABA89F;
-  --acc:#E2E0D8;--on-acc:#1C1B17;--good:#7fae70;--warn:#d0a24a;--bad:#e08a7a;--held:#b79af0;
-  --tc:#9ab07a;--ts:#d0a07a;--tn:#a0c090;--tk:#8aa0d0;--tg:#8ab0a0}}
-:root[data-theme=light]{--bg:#E2E0D8;--panel:#E8E6DF;--panel2:#DAD7CD;--line:#C9C6BB;--ink:#1C1B17;--mut:#6E6C64;--acc:#1C1B17;--on-acc:#F2F0E9;--good:#3f6d3a;--warn:#8a6410;--bad:#a12f22;--held:#5a3fa0;--tc:#6a7a52;--ts:#9a5b2a;--tn:#4a7a4a;--tk:#3a5a8a;--tg:#5a7a6a}
-:root[data-theme=dark]{--bg:#1C1B17;--panel:#24231E;--panel2:#2C2A24;--line:#3A382F;--ink:#E2E0D8;--mut:#ABA89F;--acc:#E2E0D8;--on-acc:#1C1B17;--good:#7fae70;--warn:#d0a24a;--bad:#e08a7a;--held:#b79af0;--tc:#9ab07a;--ts:#d0a07a;--tn:#a0c090;--tk:#8aa0d0;--tg:#8ab0a0}
+${GRAIN}
+/* ---- grader-ui bridge: map its layout aliases onto grain's real tokens (grain stays the source of truth) ---- */
+:root{--bg:var(--color-bg);--panel2:var(--paper-2);--line:var(--line-soft);--mut:var(--ink-muted);--acc:var(--color-accent);--on-acc:var(--color-accent-contrast);--radius:var(--radius-md);
+  --good:#3f6d3a;--warn:#8a6410;--bad:#a12f22;--held:#5a3fa0;--tc:#6a7a52;--ts:#9a5b2a;--tn:#4a7a4a;--tk:#3a5a8a;--tg:#5a7a6a}
+@media(prefers-color-scheme:dark){:root:not([data-color-scheme=light]){--good:#7fae70;--warn:#d0a24a;--bad:#e08a7a;--held:#b79af0;--tc:#9ab07a;--ts:#d0a07a;--tn:#a0c090;--tk:#8aa0d0;--tg:#8ab0a0}}
+:root[data-color-scheme=dark]{--good:#7fae70;--warn:#d0a24a;--bad:#e08a7a;--held:#b79af0;--tc:#9ab07a;--ts:#d0a07a;--tn:#a0c090;--tk:#8aa0d0;--tg:#8ab0a0}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--font-smooth)}
-.grain{font-family:var(--font-grain)}
 h1,h2,h3{font-family:var(--font-accent)}
 a{color:var(--acc)}
 .wrap{max-width:1500px;margin:0 auto;padding:20px}
@@ -189,7 +186,7 @@ pre{white-space:pre-wrap;word-wrap:break-word;background:var(--panel2);border:1p
 .codepre .tc{color:var(--tc);font-style:italic}.codepre .ts{color:var(--ts)}.codepre .tn{color:var(--tn)}.codepre .tk{color:var(--tk)}.codepre .tg{color:var(--tg)}
 select.cfile{width:100%;margin-bottom:8px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:7px 10px;font:12px ui-monospace,Menlo,monospace}
 .ftlab{display:block;font-size:12px;font-weight:600;margin:10px 0 4px}
-.fta{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:10px;font:14px/1.55 var(--font-smooth);resize:vertical}
+.fta{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:10px;font-size:14px;line-height:1.55;resize:vertical}
 .fta.mono{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
 .fta:focus{outline:2px solid var(--acc);outline-offset:-1px}
 `;}
@@ -390,7 +387,7 @@ function openReview(s,aid,skey){
      "<span class='cnt'>"+(i+1)+" / "+order.length+"</span>"+
      "<button class='gh' id='next'"+(i>=order.length-1?" disabled":"")+">Next →</button></div></div>"+
    "<div class='sub'>"+esc(aid)+" · "+esc(sk)+" · @"+esc(st.github||"")+" · repo "+esc(r.repo)+"</div>"+
-   "<div class='legend'><span>Automated: <b>"+r.raw+"</b></span><span>AI proposed: <b class='grain'>"+(r.proposed!=null?r.proposed+"/"+max:"—")+"</b></span>"+(flag?"<span>AI-authored: <b class='grain'>"+esc(flag)+"</b></span>":"")+"</div>"+
+   "<div class='legend'><span>Automated: <b>"+r.raw+"</b></span><span>AI proposed: <b data-grade='grain'>"+(r.proposed!=null?r.proposed+"/"+max:"—")+"</b></span>"+(flag?"<span>AI-authored: <b data-grade='grain'>"+esc(flag)+"</b></span>":"")+"</div>"+
    "<div class='rev2'>"+
     "<div class='rvcol'>"+
      "<div class='lvtoggle'>"+
@@ -410,7 +407,7 @@ function openReview(s,aid,skey){
       "<input class='search' id='dComment' style='width:100%;margin-top:8px' placeholder='Private note to yourself (goes to the apply prompt)…' value='"+esc(curDec&&curDec.comment||"")+"'>"+
      "</div></div>"+
      "<label class='ftlab'>Student-facing feedback <span class='mut'>— delivered as FEEDBACK.md, prose only</span>"+(curDec&&curDec.studentText!=null?" <span class='chip ov' style='font-size:10px'>edited</span>":"")+"</label>"+
-     "<textarea id='dStudent' class='fta"+(curDec&&curDec.studentText!=null?"":" grain")+"' rows='10'>"+esc(curDec&&curDec.studentText!=null?curDec.studentText:orig.student)+"</textarea>"+
+     "<textarea id='dStudent' class='fta'"+(curDec&&curDec.studentText!=null?"":" data-grade='grain'")+" rows='10'>"+esc(curDec&&curDec.studentText!=null?curDec.studentText:orig.student)+"</textarea>"+
      "<label class='ftlab'>Instructor-only notes <span class='mut'>— never delivered to the student</span>"+(curDec&&curDec.instructorText!=null?" <span class='chip ov' style='font-size:10px'>edited</span>":"")+"</label>"+
      "<textarea id='dInstr' class='fta mono' rows='12'>"+esc(curDec&&curDec.instructorText!=null?curDec.instructorText:orig.instructor)+"</textarea>"+
      "<div style='display:flex;gap:8px;align-items:center;margin-top:8px'><button class='act' id='dSave'>Save edits</button> <button class='gh' id='dRevert'>Revert to AI text</button> <span class='mut' id='dSaved' style='font-size:12px'></span></div>"+
@@ -589,7 +586,7 @@ s.dir+"\\n\\n"+
  $("#cp").onclick=()=>{navigator.clipboard.writeText(txt).then(()=>{$("#cp").textContent="Copied ✓"})};
 }
 
-function toggleTheme(){const r=document.documentElement;const cur=r.getAttribute("data-theme")|| (matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");r.setAttribute("data-theme",cur==="dark"?"light":"dark");render();}
+function toggleTheme(){const r=document.documentElement;const cur=r.getAttribute("data-color-scheme")|| (matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");r.setAttribute("data-color-scheme",cur==="dark"?"light":"dark");render();}
 function avg(a){const v=a.filter(x=>x!=null);return v.length?v.reduce((x,y)=>x+y,0)/v.length:null}
 render();
 `;}

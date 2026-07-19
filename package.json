@@ -7,6 +7,9 @@
   "bin": {
     "grader-dashboard": "src/build-dashboard.mjs"
   },
+  "dependencies": {
+    "@tjakoen/grain": "^0.1.0"
+  },
   "scripts": {
     "build": "node src/build-dashboard.mjs",
     "fetch:shots": "node src/fetch-shots.mjs",

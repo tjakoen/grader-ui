@@ -41,10 +41,17 @@ grader.config.example.json  committed example of those overrides
 ## Quickstart
 
 ```bash
+npm install                          # pulls @tjakoen/grain (the theme) from GitHub Packages
 # clone each teacher repo (flat) into classes/:
 #   classes/teacher-<subject>-<section>-<you>/
 node src/build-dashboard.mjs        # -> out/grading-review.html
 open out/grading-review.html
+```
+
+The look comes from the `@tjakoen/grain` design-system package, inlined at build time so the dashboard stays one offline file. The committed *.npmrc* points `@tjakoen` at GitHub Packages; that registry needs a token even for public packages, so add one line to your own *~/.npmrc* (never committed) with a PAT or `gh auth token` that has `read:packages`:
+
+```
+//npm.pkg.github.com/:_authToken=YOUR_TOKEN
 ```
 
 Sections are **auto-discovered** from *classes/*: the folder name gives the subject and section, the git remote gives the org, and each repo's *grader/assignments.json* says which activities have screenshots. There is nothing to configure. Drop a teacher clone in *classes/*, rebuild, and it shows up. *grader.config.example.json* documents the optional overrides (nicer tab labels, a different classes/out dir, an exclude list); copy it to *grader.config.json* only if you want them.
