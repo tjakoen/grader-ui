@@ -15,6 +15,17 @@ The platform grades take-home and in-lab work with an AI, then *holds every AI g
 
 Calling a model from inside the app would need the metered Anthropic API. This tool instead *generates a prompt* you paste into your Claude Code session: the prompt is the intent, the session is the one door, and the resulting git and gh writes are what comes back. It is free on a subscription, and you review every intent before it runs. The dashboard never writes to a repo itself.
 
+## How to use it (you review, the AI applies)
+
+The loop is the same every time, and the AI only ever acts on a decision you already made:
+
+1. **Build.** Pull the teacher repos so the gradebooks are current, then run `node src/build-dashboard.mjs` and open *out/grading-review.html*.
+2. **Review.** Open the AI Review tab. Each held grade shows the automated score, the AI-proposed score in grain type, the screenshots or code, and two feedback boxes (student-facing prose and instructor-only notes). Approve, override the score, flag for a closer look, or edit the text. Editing flips it from grain to clean, because now a human wrote it.
+3. **Generate the intent.** Hit a Generate prompt button. The dashboard writes one prompt holding every decision you made, and blanks anything you flagged or skipped so it stays out of both the student publish and the Canvas push.
+4. **Run it.** Paste that prompt into a Claude Code session opened in the teacher repo. The AI does the writing: the gradebook, the feedback files, the Canvas push. You watch it happen and keep the final say.
+
+Nothing reaches a student or Canvas from a grade you did not review. The dashboard decides nothing on its own; it makes your decisions legible and hands them to the AI as one reviewed instruction. The exact prompts it emits are catalogued in [docs/commands.md](docs/commands.md); the full walkthrough is in [docs/usage.md](docs/usage.md).
+
 ## Structure
 
 ```
