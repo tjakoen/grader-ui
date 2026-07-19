@@ -1,0 +1,18 @@
+{
+  "name": "grader-ui",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Local review surface for the GitHub-native course platform: builds a static grading-review dashboard from teacher-repo gradebooks and generates the prompts the AI runs to apply decisions. Uses the GRAIN design system.",
+  "bin": {
+    "grader-dashboard": "src/build-dashboard.mjs"
+  },
+  "scripts": {
+    "build": "node src/build-dashboard.mjs",
+    "fetch:shots": "node src/fetch-shots.mjs",
+    "fetch:code": "node src/fetch-code.mjs",
+    "audit": "node src/audit-students.mjs",
+    "fix": "node src/apply-fixes.mjs",
+    "blanks": "node src/check-blanks.mjs"
+  }
+}

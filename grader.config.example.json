@@ -1,0 +1,8 @@
+{
+  "//": "Copy to grader.config.json and fill in your own sections. classesDir holds the teacher-repo clones (flat).",
+  "classesDir": "classes",
+  "outDir": "out",
+  "sections": [
+    { "key": "SUBJECT-SECTION", "subject": "SUBJECT - Stack", "section": "SECTION", "org": "YOUR-ORG", "repo": "teacher-subject-section-you", "acts": ["m1a1"] }
+  ]
+}

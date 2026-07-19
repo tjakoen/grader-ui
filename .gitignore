@@ -1,0 +1,7 @@
+# Live instance data (PII) — never commit
+classes/
+out/
+grader.config.json
+
+# Node
+node_modules/
