@@ -303,7 +303,7 @@ function renderAI(s,w){
  const bar=el("div","card"); const pct=rows.length?Math.round(done/rows.length*100):0;
  bar.innerHTML='<div class="bd"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'+
   '<div><b>'+esc(revAct)+'</b> — reviewed <b>'+done+'/'+rows.length+'</b> · <span class="b push">'+appr+' approved</span> <span class="b held">'+ov+' override</span> <span class="b warn">'+fl+' flagged</span></div>'+
-  '<div><button class="gh" id="apprAll">Approve all unreviewed</button> <button class="gh" id="reset">Reset</button> <button class="act" id="applyAI">Apply reviewed → prompt</button></div></div>'+
+  '<div><button class="gh" id="apprAll">Approve all unreviewed</button> <button class="gh" id="reset">Reset</button> <button class="act" id="applyAI">Apply reviewed → prompt</button> <button class="act" id="finalize">Finalize → publish + Canvas</button></div></div>'+
   '<div style="height:6px;background:var(--panel2)"><div style="height:100%;width:'+pct+'%;background:var(--acc)"></div></div>';
  w.append(bar);
  // queue table
@@ -327,6 +327,7 @@ function renderAI(s,w){
    $("#apprAll").onclick=()=>{rows.forEach(row=>{if(!isDecided(row.dec)&&row.r.proposed!=null)setDec(s.section,revAct,skeyOf(row.st),Object.assign({},row.dec,{status:"approve"}))});render()};
    $("#reset").onclick=()=>{if(confirm("Clear all decisions for "+revAct+"?")){rows.forEach(row=>setDec(s.section,revAct,skeyOf(row.st),null));render()}};
    $("#applyAI").onclick=()=>showApplyAI(s,revAct);
+   $("#finalize").onclick=()=>showFinalize(s,revAct);
  },0);
 }
 
@@ -472,13 +473,10 @@ flagged.map(x=>"  - "+(x.st.name||x.r.repo)+" ("+(x.st.number||"?")+") · "+x.r.
 (undone.length?"## Not yet reviewed ("+undone.length+") — do NOT apply\\n\\n":"")+
 "## Steps\\n"+
 "1. For each OVERRIDE student, set gradebook/grades.csv aiScore to the final score I gave (do not touch the objective test score column). Approved students keep the AI's proposed aiScore.\\n"+
-"2. For every FLAGGED or NOT-YET-REVIEWED student on "+aid+", BLANK their aiScore cell in gradebook/grades.csv. This keeps them out of both the student publish and the Canvas push (which skips a blank aiScore), so only my reviewed decisions go out.\\n"+
-"3. For every student under \\"Edited feedback to write\\", overwrite gradebook/notes/"+aid+"/<repo>.md with my exact text: replace the student-facing prose half and/or the instructor half as labelled, keeping the title line and the italic disclaimer line intact. For OVERRIDE students with no edited instructor text, still update the instructor note's proposed total to match my score and mark it human-reviewed.\\n"+
-"4. Set \\"publish\\": true on "+aid+" in grader/assignments.json.\\n"+
-"5. Deliver to the reviewed students via the publish flow (publish.yml) — DRY RUN first, show me the plan, then execute on my go. Skip flagged + unreviewed students.\\n"+
-"6. Push to Canvas: with publish:true, canvas-push now sends each reviewed student's final score PLUS a rubric-breakdown comment (per-criterion points + my feedback prose, no scores-as-AI/no vibecode) for "+aid+". Run it in check, then dry-run, then --execute on my go. Confirm blanked (flagged/unreviewed) students are NOT in the plan.\\n"+
-"7. Verify: confirm each reviewed student received FEEDBACK.md/GRADES.md, the delivered prose matches my edited student-facing text, the Canvas grade + comment match my decision, and no flagged/unreviewed student got anything.\\n\\n"+
-"Do not publish flagged or unreviewed students. The student-facing FEEDBACK.md and the Canvas comment must stay free of any \\"AI\\" mention and of the instructor-only likelihood/vibecode line. The <<< >>> markers are delimiters only — do not include them in the files.\\n";
+"2. For every FLAGGED or NOT-YET-REVIEWED student on "+aid+", BLANK their aiScore cell in gradebook/grades.csv. A blank aiScore holds a student out of the Canvas push (canvas-push skips it) and marks them not-cleared for delivery.\\n"+
+"3. For every student under \\"Edited feedback to write\\", overwrite gradebook/notes/"+aid+"/<repo>.md with my exact text: replace the student-facing prose half and/or the instructor half as labelled, keeping the title line and the italic disclaimer line intact. For OVERRIDE students with no edited instructor text, still update the instructor note's proposed total to match my score, adjust the per-criterion bullets to sum to it, and record the human-review note on the proposed-total line (so it stays out of the Canvas comment).\\n"+
+"4. Verify the gradebook: overrides show my score, flagged/unreviewed aiScore are blank, approved are unchanged. Rebuild the dashboard (node src/build-dashboard.mjs) so I can review the applied grades before delivery.\\n\\n"+
+"Do NOT publish or push Canvas from this prompt, and do NOT flip \\"publish\\": true. This prompt writes grades only. Delivery (flip publish:true, publish to students, push Canvas, verify) is the separate Finalize step (the Finalize button emits that prompt), gated on my go. The student-facing FEEDBACK.md and the Canvas comment must stay free of any \\"AI\\" mention and of the instructor-only likelihood/vibecode line. The <<< >>> markers are delimiters only — do not include them in the files.\\n";
  const d=el("div","drawer on"); const p=el("div","dp");
  p.innerHTML="<button class='x'>×</button><h3>Apply reviewed AI grades — "+esc(aid)+"</h3><div class='sub'>"+decided.length+" to apply · "+flagged.length+" flagged · "+undone.length+" not reviewed</div><div style='margin:10px 0'><button class='act' id='cp'>Copy prompt</button> <button class='gh' id='csv'>Download CSV</button></div><pre id='ptxt'>"+esc(txt)+"</pre>";
  d.append(p); document.body.append(d);
@@ -489,6 +487,35 @@ flagged.map(x=>"  - "+(x.st.name||x.r.repo)+" ("+(x.st.number||"?")+") · "+x.r.
    const body=rows.map(x=>{const fin=finalScore(x);const st=isDecided(x.dec)?x.dec.status:"unreviewed";return [x.st.number||"",'"'+(x.st.name||"").replace(/"/g,'""')+'"',x.r.repo,x.r.proposed==null?"":x.r.proposed,st,fin==null?"":fin,max,'"'+((x.dec&&x.dec.comment||"")).replace(/"/g,'""')+'"'].join(",")}).join("\\n");
    const blob=new Blob([hdr+body],{type:"text/csv"});const u=URL.createObjectURL(blob);const a=el("a");a.href=u;a.download="ai-review-"+s.section+"-"+aid+".csv";a.click();URL.revokeObjectURL(u);
  };
+}
+
+function showFinalize(s,aid){
+ const rows=reviewRows(s,aid); const max=s.assignments.find(a=>a.id===aid).totalPoints;
+ const delivered=rows.filter(x=>isDecided(x.dec)&&x.dec.status!=="flag");
+ const heldOut=rows.filter(x=>!(isDecided(x.dec)&&x.dec.status!=="flag"));
+ const delList=delivered.map(x=>"  - "+x.r.repo+": "+finalScore(x)+"/"+max).join("\\n")||"  (none cleared yet)";
+ const heldList=heldOut.map(x=>"  - "+x.r.repo+(x.dec&&x.dec.status==="flag"?" (flagged)":" (not reviewed)")).join("\\n")||"  (none)";
+ const txt=
+"# Finalize and deliver — "+s.subject+" (section "+s.section+") — "+aid+"\\n\\n"+
+"The reviewed grades for "+aid+" are already written to the gradebook (approved + overrides applied; held/flagged aiScore blanked). Now deliver ONLY the cleared students to their workspaces and to Canvas. Work from: "+s.dir+"\\n\\n"+
+"## Cleared to deliver ("+delivered.length+")\\n"+delList+"\\n\\n"+
+"## Held OUT — do NOT deliver ("+heldOut.length+")\\n"+heldList+"\\n\\n"+
+"## Rules (do not violate)\\n"+
+"- Dry-run first for BOTH publish and Canvas; execute only on my explicit \\"go\\".\\n"+
+"- Student FEEDBACK.md and the Canvas comment carry NO scores-as-AI, no \\"AI\\" mention, and never the instructor-only likelihood/vibecode line.\\n"+
+"- publish-grades.mjs does not gate on aiScore, so an activity-wide publish would also deliver the held students' FEEDBACK. Deliver ONLY the cleared repos above: use the publish workflow's repo input (one run per cleared repo), OR if the aiScore gate has been added to publish-grades, a single publish only="+aid+" is safe.\\n\\n"+
+"## Steps\\n"+
+"1. Flip \\"publish\\": true on "+aid+" in grader/assignments.json (the readiness gate; nothing delivers yet).\\n"+
+"2. Student publish (publish.yml), DRY RUN (publish=false), restricted to the cleared repos. Show me the plan; confirm it lists exactly the cleared repos above and no held student.\\n"+
+"3. On my \\"go\\": run publish for real (publish=true) for the cleared repos only.\\n"+
+"4. Canvas push in CHECK mode for "+aid+" (tools/canvas-push.mjs --section="+s.section+" --check). Show the report; confirm every cleared student maps and no held student appears (held students have blank aiScore and are skipped).\\n"+
+"5. On my \\"go\\": canvas-push --execute. Each cleared student gets their final score PLUS a rubric-breakdown comment (per-criterion points + feedback prose).\\n"+
+"6. VERIFY: each cleared student received FEEDBACK.md/GRADES.md and the correct Canvas grade + comment (spot-check 2-3), and NO held/flagged student got anything.\\n";
+ const d=el("div","drawer on"); const p=el("div","dp");
+ p.innerHTML="<button class='x'>×</button><h3>Finalize and deliver — "+esc(aid)+"</h3><div class='sub'>"+delivered.length+" cleared to deliver · "+heldOut.length+" held out</div><div style='margin:10px 0'><button class='act' id='cp'>Copy prompt</button></div><pre id='ptxt'>"+esc(txt)+"</pre>";
+ d.append(p); document.body.append(d);
+ const close=()=>d.remove(); p.querySelector(".x").onclick=close; d.onclick=e=>{if(e.target===d)close()};
+ $("#cp").onclick=()=>navigator.clipboard.writeText(txt).then(()=>$("#cp").textContent="Copied ✓");
 }
 
 function matrix(s){

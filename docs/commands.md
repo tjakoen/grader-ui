@@ -22,8 +22,18 @@ Code session, and the AI performs the writes as `git`/`gh` operations
 - **Apply reviewed AI grades** (AI Review tab). Emits each reviewed decision
   (final score + edited student-facing / instructor-only text), instructs the
   assistant to write back the correct half of `gradebook/notes/<id>/<repo>.md`
-  and blank any flagged or unreviewed `aiScore` so it stays out of both the
-  student publish and the Canvas push.
+  and blank any flagged or unreviewed `aiScore`. A blank `aiScore` holds a
+  student out of the Canvas push (`canvas-push` skips it) and marks them
+  not-cleared for delivery. This intent writes grades only; it does not publish
+  or push. Delivery is the separate Finalize intent below.
+- **Finalize and deliver** (AI Review tab, per activity). Emits the delivery
+  prompt: student publish plus Canvas push, for the cleared (approved + override)
+  students only, dry-run first and gated on the instructor's go. It lists the
+  cleared repos and the held-out ones explicitly. Note: `publish-grades.mjs` does
+  not gate on `aiScore`, so the prompt restricts the publish to the cleared repos
+  (the workflow's `repo` input, one run per repo) rather than an activity-wide
+  publish. Adding an `aiScore` gate to `publish-grades.mjs` (shared across the six
+  teacher repos) would make an activity-wide publish safe and finalize one-shot.
 
 ## The review gate (invariant)
 
