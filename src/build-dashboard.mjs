@@ -66,9 +66,17 @@ function loadSection(sc) {
       const m = note.match(/AI-authored likelihood:\s*([^\n]+)/i); if (m) aiFlag = m[1].trim();
       const t = note.match(/\nFlag:\s*([^\n]+)/i); if (t) triage = t[1].trim();
     }
+    // The CSV aiScore is the reviewed FINAL score, present only once a student is
+    // cleared. Before that it is blank, so surface the AI's PROPOSED total parsed
+    // from the note (the notes-input flow leaves aiScore blank until you clear it).
+    let proposed = aiScore;
+    if (proposed == null && note) {
+      const pm = note.match(/Proposed total:\s*([0-9]{1,3})\s*\/\s*[0-9]{1,3}/i);
+      if (pm) { const pmax = a.totalPoints ?? a.autoPoints ?? +pm[1]; proposed = Math.min(pmax, +pm[1]); }
+    }
     st.activities[id] = {
       repo: f[gi("repo")], passed, total, raw: `${passed}/${total}`,
-      canvasPts, proposed: aiScore, proposedMax: (a.totalPoints ?? a.autoPoints ?? total),
+      canvasPts, proposed, proposedMax: (a.totalPoints ?? a.autoPoints ?? total),
       held, kind, note: note || null, aiFlag, triage,
       sha: (f[gi("sha")]||"").slice(0,7), late: f[gi("late")]==="true",
     };
@@ -303,7 +311,7 @@ function renderAI(s,w){
  const bar=el("div","card"); const pct=rows.length?Math.round(done/rows.length*100):0;
  bar.innerHTML='<div class="bd"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'+
   '<div><b>'+esc(revAct)+'</b> — reviewed <b>'+done+'/'+rows.length+'</b> · <span class="b push">'+appr+' approved</span> <span class="b held">'+ov+' override</span> <span class="b warn">'+fl+' flagged</span></div>'+
-  '<div><button class="gh" id="apprAll">Approve all unreviewed</button> <button class="gh" id="reset">Reset</button> <button class="act" id="applyAI">Apply reviewed → prompt</button> <button class="act" id="finalize">Finalize → publish + Canvas</button></div></div>'+
+  '<div><button class="gh" id="genFb">Generate feedback → prompt</button> <button class="gh" id="apprAll">Approve all unreviewed</button> <button class="gh" id="reset">Reset</button> <button class="act" id="applyAI">Apply reviewed → prompt</button> <button class="act" id="finalize">Finalize → publish + Canvas</button></div></div>'+
   '<div style="height:6px;background:var(--panel2)"><div style="height:100%;width:'+pct+'%;background:var(--acc)"></div></div>';
  w.append(bar);
  // queue table
@@ -326,6 +334,7 @@ function renderAI(s,w){
    t.querySelectorAll("tr[data-s]").forEach(tr=>tr.onclick=()=>openReview(s,revAct,tr.dataset.s));
    $("#apprAll").onclick=()=>{rows.forEach(row=>{if(!isDecided(row.dec)&&row.r.proposed!=null)setDec(s.section,revAct,skeyOf(row.st),Object.assign({},row.dec,{status:"approve"}))});render()};
    $("#reset").onclick=()=>{if(confirm("Clear all decisions for "+revAct+"?")){rows.forEach(row=>setDec(s.section,revAct,skeyOf(row.st),null));render()}};
+   $("#genFb").onclick=()=>showGenFeedback(s,revAct);
    $("#applyAI").onclick=()=>showApplyAI(s,revAct);
    $("#finalize").onclick=()=>showFinalize(s,revAct);
  },0);
@@ -445,6 +454,30 @@ function openReview(s,aid,skey){
  paint(idx);
 }
 
+function showGenFeedback(s,aid){
+ const rows=reviewRows(s,aid); const max=s.assignments.find(a=>a.id===aid).totalPoints;
+ const pending=rows.filter(x=>!x.r.note);
+ const txt=
+"# Generate AI feedback drafts - "+s.subject+" (section "+s.section+") - "+aid+"\\n\\n"+
+"The grade sweep wrote a per-submission input file to gradebook/notes-input/"+aid+"/ for each submission that opted in. Turn each into a reviewable note draft I can check in this dashboard. Work from: "+s.dir+"\\n\\n"+
+"## What to do\\n"+
+"For EVERY gradebook/notes-input/"+aid+"/<repo>.md that does NOT already have a matching gradebook/notes/"+aid+"/<repo>.md:\\n"+
+"  1. Read the input file. It embeds the persona, the hard rules, the class context, the rubric, the automated result, the student source, and the exact output format.\\n"+
+"  2. If it lists screenshots, open those image files (gradebook/notes-input/"+aid+"/<repo>.shots/...) to judge the design.\\n"+
+"  3. Write gradebook/notes/"+aid+"/<repo>.md following that file's skeleton and output format EXACTLY: the student-facing prose half (no scores, no rubric, no \\"AI\\" mention), then a line with only ---, then \\"**For the instructor (not shown to the student):**\\", then the rubric breakdown, a \\"Proposed total: N/"+max+"\\" line, and the \\"AI-authored likelihood\\" line.\\n\\n"+
+"## Rules (do not violate)\\n"+
+"- This step DRAFTS notes only. Do NOT write grades.csv, do NOT flip \\"publish\\": true, do NOT publish to students, do NOT push Canvas.\\n"+
+"- SKIP any repo that already has a note in gradebook/notes/"+aid+"/ - never overwrite a draft I may have edited.\\n"+
+"- The student-facing half must never mention \\"AI\\", scores, points, or the rubric; the likelihood/vibecode line stays in the instructor half only.\\n"+
+"- Only process repos that have an input file; do not invent submissions.\\n\\n"+
+"When done, rebuild the dashboard (node src/build-dashboard.mjs) so I can review each draft and its proposed score, then Approve/Override/Flag here.\\n";
+ const d=el("div","drawer on"); const p=el("div","dp");
+ p.innerHTML="<button class='x'>×</button><h3>Generate AI feedback drafts - "+esc(aid)+"</h3><div class='sub'>"+pending.length+" submission(s) without a note yet · runs in a Claude Code session on your subscription (no GitHub Models)</div><div style='margin:10px 0'><button class='act' id='cp'>Copy prompt</button></div><pre id='ptxt'>"+esc(txt)+"</pre>";
+ d.append(p); document.body.append(d);
+ const close=()=>d.remove(); p.querySelector(".x").onclick=close; d.onclick=e=>{if(e.target===d)close()};
+ $("#cp").onclick=()=>navigator.clipboard.writeText(txt).then(()=>$("#cp").textContent="Copied ✓");
+}
+
 function showApplyAI(s,aid){
  const rows=reviewRows(s,aid); const max=s.assignments.find(a=>a.id===aid).totalPoints;
  const decided=rows.filter(x=>isDecided(x.dec)&&x.dec.status!=="flag");
@@ -503,7 +536,7 @@ function showFinalize(s,aid){
 "## Rules (do not violate)\\n"+
 "- Dry-run first for BOTH publish and Canvas; execute only on my explicit \\"go\\".\\n"+
 "- Student FEEDBACK.md and the Canvas comment carry NO scores-as-AI, no \\"AI\\" mention, and never the instructor-only likelihood/vibecode line.\\n"+
-"- publish-grades.mjs does not gate on aiScore, so an activity-wide publish would also deliver the held students' FEEDBACK. Deliver ONLY the cleared repos above: use the publish workflow's repo input (one run per cleared repo), OR if the aiScore gate has been added to publish-grades, a single publish only="+aid+" is safe.\\n\\n"+
+"- publish-grades.mjs gates on aiScore: a blank aiScore holds a student out of BOTH the student publish and the Canvas push, so a single publish only="+aid+" delivers exactly the cleared students above (held/flagged students, with blank aiScore, are skipped automatically).\\n\\n"+
 "## Steps\\n"+
 "1. Flip \\"publish\\": true on "+aid+" in grader/assignments.json (the readiness gate; nothing delivers yet).\\n"+
 "2. Student publish (publish.yml), DRY RUN (publish=false), restricted to the cleared repos. Show me the plan; confirm it lists exactly the cleared repos above and no held student.\\n"+
