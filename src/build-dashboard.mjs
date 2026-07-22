@@ -26,11 +26,17 @@ const pointsFor = (passed, total, pp) => (!total ? null : Math.round((passed/tot
 function loadSection(sc) {
   const pol = JSON.parse(fs.readFileSync(path.join(sc.dir, "grader/assignments.json"), "utf8"));
   const policy = new Map(pol.map(a => [a.id, a]));
-  const assignments = pol.map(a => ({
-    id: a.id, totalPoints: a.totalPoints ?? null, autoPoints: a.autoPoints ?? null,
-    aiGraded: !!a["ai-grading"], manual: !!a.manual, locked: !!a.locked, publish: !!a.publish,
-    feedback: a.feedback || null,
-  }));
+  const assignments = pol.map(a => {
+    const aiGraded = !!a["ai-grading"], manual = !!a.manual, quiz = a.type === "quiz";
+    // activity-level kind, lifted from the per-row kind so the matrix header + deliver
+    // prompt can reason about the whole column: manual > held (AI) > quiz > push.
+    const kind = manual ? "manual" : aiGraded ? "held" : quiz ? "quiz" : "push";
+    return {
+      id: a.id, totalPoints: a.totalPoints ?? null, autoPoints: a.autoPoints ?? null,
+      aiGraded, manual, quiz, kind, type: a.type || null,
+      locked: !!a.locked, publish: !!a.publish, feedback: a.feedback || null,
+    };
+  });
   const csv = fs.readFileSync(path.join(sc.dir, "gradebook/grades.csv"), "utf8").replace(/\n$/,"").split("\n");
   const h = parse(csv[0]); const gi = (n) => h.indexOf(n);
   const noteDir = (id, repo) => path.join(sc.dir, "gradebook/notes", id, `${repo}.md`);
@@ -154,6 +160,7 @@ th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(--panel
 .b.held{background:color-mix(in srgb,var(--held) 22%,transparent);color:var(--held)}
 .b.push{background:color-mix(in srgb,var(--good) 20%,transparent);color:var(--good)}
 .b.manual{background:color-mix(in srgb,var(--mut) 22%,transparent);color:var(--mut)}
+.b.quiz{background:color-mix(in srgb,var(--tk) 24%,transparent);color:var(--tk)}
 .b.warn{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn)}
 .mut{color:var(--mut)}.rt{text-align:right}.center{text-align:center}
 .pill{font-size:11px;color:var(--mut)}
@@ -268,16 +275,17 @@ function renderBook(s,w){
   ["Students",s.stats.students],["Activities",s.stats.activities],
   ["Held for review",s.stats.held+' <span class="pill">AI, not auto-pushed</span>'],
   ["Blank student.json",s.stats.blankStudentJson],
-  ["Avg auto-push",avgP==null?"—":Math.round(avgP*100)+"%"],
+  ["Avg auto-push",avgP==null?"-":Math.round(avgP*100)+"%"],
  ].map(([l,n])=>'<div class="tile"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>').join("");
  w.append(tiles);
  const ctl=el("div"); ctl.style.margin="6px 0 0";
- ctl.innerHTML='<input class="search" id="q" placeholder="Filter students…" value="'+esc(q)+'"> <button class="act" id="prompt">Generate apply-grades prompt →</button>';
+ ctl.innerHTML='<input class="search" id="q" placeholder="Filter students…" value="'+esc(q)+'"> <button class="gh" id="prompt">Generate apply-grades prompt →</button> <button class="act" id="deliver">Deliver to Canvas + workspaces →</button>';
  w.append(ctl);
  w.append(matrix(s));
  w.append(canvasPanel(s));
  $("#q").oninput=e=>{q=e.target.value.toLowerCase();renderMatrixOnly(s)};
  $("#prompt").onclick=()=>showPrompt(s);
+ $("#deliver").onclick=()=>showDeliver(s);
 }
 function renderMatrixOnly(s){ const old=$("#matrixcard"); if(old){const n=matrix(s);old.replaceWith(n);} }
 
@@ -310,24 +318,24 @@ function renderAI(s,w){
  // progress + actions
  const bar=el("div","card"); const pct=rows.length?Math.round(done/rows.length*100):0;
  bar.innerHTML='<div class="bd"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'+
-  '<div><b>'+esc(revAct)+'</b> — reviewed <b>'+done+'/'+rows.length+'</b> · <span class="b push">'+appr+' approved</span> <span class="b held">'+ov+' override</span> <span class="b warn">'+fl+' flagged</span></div>'+
+  '<div><b>'+esc(revAct)+'</b> - reviewed <b>'+done+'/'+rows.length+'</b> · <span class="b push">'+appr+' approved</span> <span class="b held">'+ov+' override</span> <span class="b warn">'+fl+' flagged</span></div>'+
   '<div><button class="gh" id="genFb">Generate feedback → prompt</button> <button class="gh" id="apprAll">Approve all unreviewed</button> <button class="gh" id="reset">Reset</button> <button class="act" id="applyAI">Apply reviewed → prompt</button> <button class="act" id="finalize">Finalize → publish + Canvas</button></div></div>'+
   '<div style="height:6px;background:var(--panel2)"><div style="height:100%;width:'+pct+'%;background:var(--acc)"></div></div>';
  w.append(bar);
  // queue table
- const card=el("div","card"); card.append(el("h2",null,"Review queue — click a row to read the feedback and decide"));
+ const card=el("div","card"); card.append(el("h2",null,"Review queue - click a row to read the feedback and decide"));
  const scr=el("div","scroll"); const t=el("table");
  const max=s.assignments.find(a=>a.id===revAct).totalPoints;
  t.innerHTML="<tr><th>Student</th><th>#</th><th class='center'>Proposed</th><th class='center'>AI-authored likelihood</th><th class='center'>Decision</th><th class='center'>Final</th></tr>"+
  rows.map(row=>{
    const stt=decStatus(row), fin=finalScore(row);
-   const flag=row.r.aiFlag||"—"; const fl=/high/i.test(flag)?"bad":/medium/i.test(flag)?"warn":"push";
+   const flag=row.r.aiFlag||"-"; const fl=/high/i.test(flag)?"bad":/medium/i.test(flag)?"warn":"push";
    const skey=esc(skeyOf(row.st));
-   return "<tr data-s='"+skey+"' style='cursor:pointer'><td>"+esc(row.st.name||"(blank)")+(row.r.triage?" <span class='b warn' title='"+esc(row.r.triage)+"'>flag</span>":"")+"</td><td class='mut'>"+esc(row.st.number||"—")+"</td>"+
+   return "<tr data-s='"+skey+"' style='cursor:pointer'><td>"+esc(row.st.name||"(blank)")+(row.r.triage?" <span class='b warn' title='"+esc(row.r.triage)+"'>flag</span>":"")+"</td><td class='mut'>"+esc(row.st.number||"-")+"</td>"+
      "<td class='center'>"+(row.r.proposed!=null?row.r.proposed+"/"+max:"<span class='b warn'>no score</span>")+"</td>"+
      "<td class='center'><span class='b "+fl+"'>"+esc(flag.split(" - ")[0])+"</span></td>"+
      "<td class='center'><span class='b "+({todo:"manual",ok:"push",ov:"held",fl:"warn"}[stt.k])+"'>"+stt.l+"</span></td>"+
-     "<td class='center tot'>"+(fin!=null?fin+"/"+max:"—")+"</td></tr>";
+     "<td class='center tot'>"+(fin!=null?fin+"/"+max:"-")+"</td></tr>";
  }).join("");
  scr.append(t); card.append(scr); w.append(card);
  setTimeout(()=>{
@@ -399,7 +407,7 @@ function openReview(s,aid,skey){
      "<span class='cnt'>"+(i+1)+" / "+order.length+"</span>"+
      "<button class='gh' id='next'"+(i>=order.length-1?" disabled":"")+">Next →</button></div></div>"+
    "<div class='sub'>"+esc(aid)+" · "+esc(sk)+" · @"+esc(st.github||"")+" · repo "+esc(r.repo)+"</div>"+
-   "<div class='legend'><span>Automated: <b>"+r.raw+"</b></span><span>AI proposed: <b data-grade='grain'>"+(r.proposed!=null?r.proposed+"/"+max:"—")+"</b></span>"+(flag?"<span>AI-authored: <b data-grade='grain'>"+esc(flag)+"</b></span>":"")+"</div>"+
+   "<div class='legend'><span>Automated: <b>"+r.raw+"</b></span><span>AI proposed: <b data-grade='grain'>"+(r.proposed!=null?r.proposed+"/"+max:"-")+"</b></span>"+(flag?"<span>AI-authored: <b data-grade='grain'>"+esc(flag)+"</b></span>":"")+"</div>"+
    "<div class='rev2'>"+
     "<div class='rvcol'>"+
      "<div class='lvtoggle'>"+
@@ -418,9 +426,9 @@ function openReview(s,aid,skey){
       "<button class='gh' id='dClear'>Clear</button></div>"+
       "<input class='search' id='dComment' style='width:100%;margin-top:8px' placeholder='Private note to yourself (goes to the apply prompt)…' value='"+esc(curDec&&curDec.comment||"")+"'>"+
      "</div></div>"+
-     "<label class='ftlab'>Student-facing feedback <span class='mut'>— delivered as FEEDBACK.md, prose only</span>"+(curDec&&curDec.studentText!=null?" <span class='chip ov' style='font-size:10px'>edited</span>":"")+"</label>"+
+     "<label class='ftlab'>Student-facing feedback <span class='mut'>- delivered as FEEDBACK.md, prose only</span>"+(curDec&&curDec.studentText!=null?" <span class='chip ov' style='font-size:10px'>edited</span>":"")+"</label>"+
      "<textarea id='dStudent' class='fta'"+(curDec&&curDec.studentText!=null?"":" data-grade='grain'")+" rows='10'>"+esc(curDec&&curDec.studentText!=null?curDec.studentText:orig.student)+"</textarea>"+
-     "<label class='ftlab'>Instructor-only notes <span class='mut'>— never delivered to the student</span>"+(curDec&&curDec.instructorText!=null?" <span class='chip ov' style='font-size:10px'>edited</span>":"")+"</label>"+
+     "<label class='ftlab'>Instructor-only notes <span class='mut'>- never delivered to the student</span>"+(curDec&&curDec.instructorText!=null?" <span class='chip ov' style='font-size:10px'>edited</span>":"")+"</label>"+
      "<textarea id='dInstr' class='fta mono' rows='12'>"+esc(curDec&&curDec.instructorText!=null?curDec.instructorText:orig.instructor)+"</textarea>"+
      "<div style='display:flex;gap:8px;align-items:center;margin-top:8px'><button class='act' id='dSave'>Save edits</button> <button class='gh' id='dRevert'>Revert to AI text</button> <span class='mut' id='dSaved' style='font-size:12px'></span></div>"+
     "</div>"+
@@ -484,34 +492,34 @@ function showApplyAI(s,aid){
  const flagged=rows.filter(x=>x.dec&&x.dec.status==="flag");
  const undone=rows.filter(x=>!isDecided(x.dec));
  const edited=decided.filter(x=>x.dec.studentText!=null||x.dec.instructorText!=null);
- const lines=decided.map(x=>{const fin=finalScore(x);const tags=[x.dec.status==="override"?"OVERRIDE — was "+(x.r.proposed==null?"none":x.r.proposed):"approved"];if(x.dec.studentText!=null)tags.push("edited student feedback");if(x.dec.instructorText!=null)tags.push("edited instructor note");return "  - "+(x.st.name||x.r.repo)+" ("+(x.st.number||"?")+") · "+x.r.repo+": "+fin+"/"+max+"  ["+tags.join("; ")+"]"+(x.dec.comment?" — note: "+x.dec.comment:"");}).join("\\n");
+ const lines=decided.map(x=>{const fin=finalScore(x);const tags=[x.dec.status==="override"?"OVERRIDE - was "+(x.r.proposed==null?"none":x.r.proposed):"approved"];if(x.dec.studentText!=null)tags.push("edited student feedback");if(x.dec.instructorText!=null)tags.push("edited instructor note");return "  - "+(x.st.name||x.r.repo)+" ("+(x.st.number||"?")+") · "+x.r.repo+": "+fin+"/"+max+"  ["+tags.join("; ")+"]"+(x.dec.comment?" - note: "+x.dec.comment:"");}).join("\\n");
  const editBlocks=edited.map(x=>{
    let b="### "+x.r.repo+"  (final "+finalScore(x)+"/"+max+")\\n";
-   if(x.dec.studentText!=null)b+="STUDENT-FACING — replace the prose half of gradebook/notes/"+aid+"/"+x.r.repo+".md (between the italic disclaimer line and the '---' instructor separator):\\n<<<\\n"+x.dec.studentText+"\\n>>>\\n";
-   if(x.dec.instructorText!=null)b+="INSTRUCTOR-ONLY — replace the instructor half (everything after the '---'):\\n<<<\\n"+x.dec.instructorText+"\\n>>>\\n";
+   if(x.dec.studentText!=null)b+="STUDENT-FACING - replace the prose half of gradebook/notes/"+aid+"/"+x.r.repo+".md (between the italic disclaimer line and the '---' instructor separator):\\n<<<\\n"+x.dec.studentText+"\\n>>>\\n";
+   if(x.dec.instructorText!=null)b+="INSTRUCTOR-ONLY - replace the instructor half (everything after the '---'):\\n<<<\\n"+x.dec.instructorText+"\\n>>>\\n";
    return b;
  }).join("\\n");
  const txt=
-"# Apply reviewed AI grades — "+s.subject+" (section "+s.section+") — "+aid+"\\n\\n"+
+"# Apply reviewed AI grades - "+s.subject+" (section "+s.section+") - "+aid+"\\n\\n"+
 "I have reviewed the held AI grades for "+aid+". Apply my decisions below. Work from: "+s.dir+"\\n\\n"+
 "## Reviewed decisions (final score / "+max+")\\n"+(lines||"  (none decided yet)")+"\\n\\n"+
 (editBlocks?"## Edited feedback to write (use this EXACT text, verbatim)\\n"+editBlocks+"\\n":"")+
-(flagged.length?"## Flagged for deeper review — do NOT apply, publish, or push; re-examine and report back to me\\n"+
+(flagged.length?"## Flagged for deeper review - do NOT apply, publish, or push; re-examine and report back to me\\n"+
 "For each student below, do a thorough second pass on "+aid+":\\n"+
 "  1. Read the current assessment in gradebook/notes/"+aid+"/<repo>.md and the rubric in grader/"+aid+"/RUBRIC.md (plus grader/class-prompt.md).\\n"+
 "  2. Clone the submission repo at its graded SHA and read the ACTUAL code; if it is a design activity, open its screenshots (gradebook/previews/"+aid+"/<repo>/ or the previews branch).\\n"+
 "  3. Produce a fresh per-criterion breakdown, a revised proposed score out of "+max+", and a revised student-facing feedback draft, explicitly addressing my flag note. Call out anything that looks off (over/under-scored, mismatch with the code, possible integrity issue).\\n"+
 "  4. Present it all to me in chat for a decision. Do NOT write grades.csv, notes, publish, or push Canvas for these students.\\n\\n"+
-flagged.map(x=>"  - "+(x.st.name||x.r.repo)+" ("+(x.st.number||"?")+") · "+x.r.repo+" @"+(x.r.sha||"?")+" · current proposed "+(x.r.proposed!=null?x.r.proposed+"/"+max:"none")+(x.r.aiFlag?" · AI-likelihood "+x.r.aiFlag.split(" - ")[0]:"")+(x.dec.comment?" — my note: "+x.dec.comment:"")).join("\\n")+"\\n\\n":"")+
-(undone.length?"## Not yet reviewed ("+undone.length+") — do NOT apply\\n\\n":"")+
+flagged.map(x=>"  - "+(x.st.name||x.r.repo)+" ("+(x.st.number||"?")+") · "+x.r.repo+" @"+(x.r.sha||"?")+" · current proposed "+(x.r.proposed!=null?x.r.proposed+"/"+max:"none")+(x.r.aiFlag?" · AI-likelihood "+x.r.aiFlag.split(" - ")[0]:"")+(x.dec.comment?" - my note: "+x.dec.comment:"")).join("\\n")+"\\n\\n":"")+
+(undone.length?"## Not yet reviewed ("+undone.length+") - do NOT apply\\n\\n":"")+
 "## Steps\\n"+
 "1. For each OVERRIDE student, set gradebook/grades.csv aiScore to the final score I gave (do not touch the objective test score column). Approved students keep the AI's proposed aiScore.\\n"+
 "2. For every FLAGGED or NOT-YET-REVIEWED student on "+aid+", BLANK their aiScore cell in gradebook/grades.csv. A blank aiScore holds a student out of the Canvas push (canvas-push skips it) and marks them not-cleared for delivery.\\n"+
 "3. For every student under \\"Edited feedback to write\\", overwrite gradebook/notes/"+aid+"/<repo>.md with my exact text: replace the student-facing prose half and/or the instructor half as labelled, keeping the title line and the italic disclaimer line intact. For OVERRIDE students with no edited instructor text, still update the instructor note's proposed total to match my score, adjust the per-criterion bullets to sum to it, and record the human-review note on the proposed-total line (so it stays out of the Canvas comment).\\n"+
 "4. Verify the gradebook: overrides show my score, flagged/unreviewed aiScore are blank, approved are unchanged. Rebuild the dashboard (node src/build-dashboard.mjs) so I can review the applied grades before delivery.\\n\\n"+
-"Do NOT publish or push Canvas from this prompt, and do NOT flip \\"publish\\": true. This prompt writes grades only. Delivery (flip publish:true, publish to students, push Canvas, verify) is the separate Finalize step (the Finalize button emits that prompt), gated on my go. The student-facing FEEDBACK.md and the Canvas comment must stay free of any \\"AI\\" mention and of the instructor-only likelihood/vibecode line. The <<< >>> markers are delimiters only — do not include them in the files.\\n";
+"Do NOT publish or push Canvas from this prompt, and do NOT flip \\"publish\\": true. This prompt writes grades only. Delivery (flip publish:true, publish to students, push Canvas, verify) is the separate Finalize step (the Finalize button emits that prompt), gated on my go. The student-facing FEEDBACK.md and the Canvas comment must stay free of any \\"AI\\" mention and of the instructor-only likelihood/vibecode line. The <<< >>> markers are delimiters only - do not include them in the files.\\n";
  const d=el("div","drawer on"); const p=el("div","dp");
- p.innerHTML="<button class='x'>×</button><h3>Apply reviewed AI grades — "+esc(aid)+"</h3><div class='sub'>"+decided.length+" to apply · "+flagged.length+" flagged · "+undone.length+" not reviewed</div><div style='margin:10px 0'><button class='act' id='cp'>Copy prompt</button> <button class='gh' id='csv'>Download CSV</button></div><pre id='ptxt'>"+esc(txt)+"</pre>";
+ p.innerHTML="<button class='x'>×</button><h3>Apply reviewed AI grades - "+esc(aid)+"</h3><div class='sub'>"+decided.length+" to apply · "+flagged.length+" flagged · "+undone.length+" not reviewed</div><div style='margin:10px 0'><button class='act' id='cp'>Copy prompt</button> <button class='gh' id='csv'>Download CSV</button></div><pre id='ptxt'>"+esc(txt)+"</pre>";
  d.append(p); document.body.append(d);
  const close=()=>d.remove(); p.querySelector(".x").onclick=close; d.onclick=e=>{if(e.target===d)close()};
  $("#cp").onclick=()=>navigator.clipboard.writeText(txt).then(()=>$("#cp").textContent="Copied ✓");
@@ -529,10 +537,10 @@ function showFinalize(s,aid){
  const delList=delivered.map(x=>"  - "+x.r.repo+": "+finalScore(x)+"/"+max).join("\\n")||"  (none cleared yet)";
  const heldList=heldOut.map(x=>"  - "+x.r.repo+(x.dec&&x.dec.status==="flag"?" (flagged)":" (not reviewed)")).join("\\n")||"  (none)";
  const txt=
-"# Finalize and deliver — "+s.subject+" (section "+s.section+") — "+aid+"\\n\\n"+
+"# Finalize and deliver - "+s.subject+" (section "+s.section+") - "+aid+"\\n\\n"+
 "The reviewed grades for "+aid+" are already written to the gradebook (approved + overrides applied; held/flagged aiScore blanked). Now deliver ONLY the cleared students to their workspaces and to Canvas. Work from: "+s.dir+"\\n\\n"+
 "## Cleared to deliver ("+delivered.length+")\\n"+delList+"\\n\\n"+
-"## Held OUT — do NOT deliver ("+heldOut.length+")\\n"+heldList+"\\n\\n"+
+"## Held OUT - do NOT deliver ("+heldOut.length+")\\n"+heldList+"\\n\\n"+
 "## Rules (do not violate)\\n"+
 "- Dry-run first for BOTH publish and Canvas; execute only on my explicit \\"go\\".\\n"+
 "- Student FEEDBACK.md and the Canvas comment carry NO scores-as-AI, no \\"AI\\" mention, and never the instructor-only likelihood/vibecode line.\\n"+
@@ -545,7 +553,7 @@ function showFinalize(s,aid){
 "5. On my \\"go\\": canvas-push --execute. Each cleared student gets their final score PLUS a rubric-breakdown comment (per-criterion points + feedback prose).\\n"+
 "6. VERIFY: each cleared student received FEEDBACK.md/GRADES.md and the correct Canvas grade + comment (spot-check 2-3), and NO held/flagged student got anything.\\n";
  const d=el("div","drawer on"); const p=el("div","dp");
- p.innerHTML="<button class='x'>×</button><h3>Finalize and deliver — "+esc(aid)+"</h3><div class='sub'>"+delivered.length+" cleared to deliver · "+heldOut.length+" held out</div><div style='margin:10px 0'><button class='act' id='cp'>Copy prompt</button></div><pre id='ptxt'>"+esc(txt)+"</pre>";
+ p.innerHTML="<button class='x'>×</button><h3>Finalize and deliver - "+esc(aid)+"</h3><div class='sub'>"+delivered.length+" cleared to deliver · "+heldOut.length+" held out</div><div style='margin:10px 0'><button class='act' id='cp'>Copy prompt</button></div><pre id='ptxt'>"+esc(txt)+"</pre>";
  d.append(p); document.body.append(d);
  const close=()=>d.remove(); p.querySelector(".x").onclick=close; d.onclick=e=>{if(e.target===d)close()};
  $("#cp").onclick=()=>navigator.clipboard.writeText(txt).then(()=>$("#cp").textContent="Copied ✓");
@@ -553,26 +561,26 @@ function showFinalize(s,aid){
 
 function matrix(s){
  const card=el("div","card"); card.id="matrixcard";
- card.append(el("h2",null,"Gradebook — students × activities <span class='mut' style='font-weight:400'>(click a cell for feedback)</span>"));
+ card.append(el("h2",null,"Gradebook - students × activities <span class='mut' style='font-weight:400'>(click a cell for feedback)</span>"));
  const leg=el("div","legend"); leg.style.padding="0 14px";
- leg.innerHTML='<span><span class="b push">push</span> auto-pushed to Canvas</span><span><span class="b held">held</span> AI proposal, review first</span><span><span class="b manual">manual</span> hand-entered</span><span>cell = Canvas points / max</span>';
+ leg.innerHTML='<span><span class="b push">push</span> auto-pushed to Canvas</span><span><span class="b held">held</span> AI proposal, review first</span><span><span class="b quiz">quiz</span> import to Canvas</span><span><span class="b manual">manual</span> hand-entered</span><span>cell = Canvas points / max</span>';
  card.append(leg);
  const sc=el("div","scroll"); const t=el("table","matrix");
  const cols=s.assignments;
- let thead="<tr><th class='stu'>Student</th><th>#</th>"+cols.map(a=>"<th class='center'>"+esc(a.id)+"<br><span class='pill'>"+(a.totalPoints!=null?a.totalPoints+"pt":(a.aiGraded?"AI":"tests"))+(a.aiGraded?" ·held":"")+"</span></th>").join("")+"<th class='center'>Push total</th><th class='center'>+Held</th></tr>";
+ let thead="<tr><th class='stu'>Student</th><th>#</th>"+cols.map(a=>"<th class='center'>"+esc(a.id)+"<br><span class='pill'>"+(a.totalPoints!=null?a.totalPoints+"pt":a.autoPoints!=null?a.autoPoints+"pt":"tests")+"</span><br><span class='b "+a.kind+"'>"+a.kind+"</span></th>").join("")+"<th class='center'>Push total</th><th class='center'>+Held</th></tr>";
  const rows=s.students.filter(st=>!q||(st.name||"").toLowerCase().includes(q)||(st.number||"").includes(q)||(st.github||"").toLowerCase().includes(q)).map(st=>{
-   let tds="<td class='stu' title='"+esc(st.name)+"'>"+esc(st.name||"(blank)")+(st.github?" <span class='pill'>@"+esc(st.github)+"</span>":"")+"</td><td class='mut'>"+esc(st.number||"—")+"</td>";
+   let tds="<td class='stu' title='"+esc(st.name)+"'>"+esc(st.name||"(blank)")+(st.github?" <span class='pill'>@"+esc(st.github)+"</span>":"")+"</td><td class='mut'>"+esc(st.number||"-")+"</td>";
    cols.forEach(a=>{
      const r=st.activities[a.id];
      if(!r){tds+="<td class='cell mut'>·</td>";return;}
      const max=a.totalPoints ?? a.autoPoints ?? r.total;
      let disp,pct=null,cls="";
      if(r.kind==="held"){disp=(r.proposed!=null?r.proposed:"?")+"/"+max;pct=r.proposed!=null&&max?r.proposed/max:null;cls="held";}
-     else if(r.kind==="manual"){disp="—";cls="manual";}
+     else if(r.kind==="manual"){disp="-";cls="manual";}
      else {disp=(r.canvasPts!=null?r.canvasPts:"?")+"/"+max;pct=r.canvasPts!=null&&max?r.canvasPts/max:null;cls="push";}
      tds+="<td class='cell "+cls+"' style='"+cellColor(pct)+"' data-s='"+esc(st.number||st.name)+"' data-a='"+a.id+"'>"+disp+(r.late?" <span class=pill>late</span>":"")+"</td>";
    });
-   tds+="<td class='center tot'>"+st.tally.push+"<span class='pill'>/"+st.tally.pushMax+"</span></td><td class='center mut'>"+(st.tally.held?"+"+st.tally.held+"/"+st.tally.heldMax:"—")+"</td>";
+   tds+="<td class='center tot'>"+st.tally.push+"<span class='pill'>/"+st.tally.pushMax+"</span></td><td class='center mut'>"+(st.tally.held?"+"+st.tally.held+"/"+st.tally.heldMax:"-")+"</td>";
    return "<tr>"+tds+"</tr>";
  }).join("");
  t.innerHTML=thead+rows;
@@ -587,8 +595,8 @@ function openNote(s,skey,aid){
  const d=el("div","drawer on"); const p=el("div","dp");
  const a=s.assignments.find(x=>x.id===aid);
  const max=a.totalPoints ?? a.autoPoints ?? r.total;
- const val=r.kind==="held"?(r.proposed+"/"+max+" (held — review)"):r.kind==="manual"?"manual":(r.canvasPts+"/"+max);
- p.innerHTML="<button class='x'>×</button><h3>"+esc(st.name)+" — "+esc(aid)+"</h3><div class='sub'>"+esc(st.number||"")+" · @"+esc(st.github||"")+" · repo "+esc(r.repo)+" @"+esc(r.sha)+"</div>"+
+ const val=r.kind==="held"?(r.proposed+"/"+max+" (held - review)"):r.kind==="manual"?"manual":(r.canvasPts+"/"+max);
+ p.innerHTML="<button class='x'>×</button><h3>"+esc(st.name)+" - "+esc(aid)+"</h3><div class='sub'>"+esc(st.number||"")+" · @"+esc(st.github||"")+" · repo "+esc(r.repo)+" @"+esc(r.sha)+"</div>"+
   "<div class='legend'><span>Automated: <b>"+r.raw+"</b></span><span>Canvas: <b>"+val+"</b></span></div>"+
   "<pre>"+esc(r.note||"(no written feedback)")+"</pre>";
  d.append(p); document.body.append(d);
@@ -597,7 +605,7 @@ function openNote(s,skey,aid){
 
 function canvasPanel(s){
  const card=el("div","card");
- card.append(el("h2",null,"Canvas preview — what a push would do"));
+ card.append(el("h2",null,"Canvas preview - what a push would do"));
  const bd=el("div","bd scroll");
  const t=el("table");
  t.innerHTML="<tr><th>Activity</th><th>Max</th><th>Graded</th><th>Status</th><th>Avg (of graded)</th></tr>"+
@@ -605,16 +613,16 @@ function canvasPanel(s){
    const rs=s.students.map(st=>st.activities[a.id]).filter(Boolean);
    const max=a.totalPoints ?? a.autoPoints ?? "tests";
    let status,avgv;
-   if(a.manual){status="<span class='b manual'>manual — skipped</span>";}
+   if(a.manual){status="<span class='b manual'>manual - skipped</span>";}
    else if(a.aiGraded){status="<span class='b held'>held for review</span>";}
    else{status="<span class='b push'>auto-push"+(a.locked?" · locked":"")+"</span>";}
    const vals=rs.map(r=>a.aiGraded?r.proposed:r.canvasPts).filter(v=>v!=null);
-   avgv=vals.length?(Math.round(vals.reduce((x,y)=>x+y,0)/vals.length*10)/10):"—";
+   avgv=vals.length?(Math.round(vals.reduce((x,y)=>x+y,0)/vals.length*10)/10):"-";
    return "<tr><td><b>"+esc(a.id)+"</b>"+(a.feedback?" <span class=pill>"+a.feedback+"</span>":"")+"</td><td>"+max+"</td><td>"+rs.length+"</td><td>"+status+"</td><td>"+avgv+"</td></tr>";
  }).join("");
  bd.append(t);
  const note=el("div","mut"); note.style.marginTop="10px"; note.style.fontSize="12px";
- note.innerHTML="Held (AI) activities are never auto-pushed — deliver them via publish after you review the notes. The exact push counts come from <code>canvas-push --check</code> (the prompt runs it).";
+ note.innerHTML="Held (AI) activities are never auto-pushed - deliver them via publish after you review the notes. The exact push counts come from <code>canvas-push --check</code> (the prompt runs it).";
  bd.append(note); card.append(bd); return card;
 }
 
@@ -626,12 +634,12 @@ function showPrompt(s){
    return "  - "+a.id+": "+(a.totalPoints!=null?a.totalPoints+" pts":"raw tests")+", "+rs.length+" students graded";
  }).join("\\n");
  const txt=
-"# Apply grades to Canvas — "+s.subject+" (section "+s.section+")\\n\\n"+
+"# Apply grades to Canvas - "+s.subject+" (section "+s.section+")\\n\\n"+
 "You are my grading assistant for the HAU platform. Apply the reviewed grades for this section to Canvas. Work from the teacher repo:\\n"+
 s.dir+"\\n\\n"+
 "## Rules (do not violate)\\n"+
 "- gradebook/grades.csv is the source of truth. Never hand-edit a grade.\\n"+
-"- These AI/held activities must NOT be auto-pushed — I review + publish them separately: "+(held.join(", ")||"(none)")+".\\n"+
+"- These AI/held activities must NOT be auto-pushed - I review + publish them separately: "+(held.join(", ")||"(none)")+".\\n"+
 "- Dry-run first. Only execute on my explicit \\"go\\".\\n\\n"+
 "## Steps\\n"+
 "1. Re-run a grade sweep only if submissions changed since "+new Date(DATA.generatedAt).toLocaleDateString()+"; otherwise use the current gradebook.\\n"+
@@ -642,10 +650,49 @@ s.dir+"\\n\\n"+
 "6. VERIFY: re-read the push report; confirm pushed count == matched students × pushable activities, no new unmatched, and spot-check 3 students' Canvas values against gradebook/grades.csv.\\n\\n"+
 "## Reminder\\nHeld activities ("+(held.join(", ")||"none")+") stay out of this push. To deliver those to students later: review gradebook/notes/, set \\"publish\\": true on the ready ones, and run publish.yml.\\n";
  const d=el("div","drawer on"); const p=el("div","dp");
- p.innerHTML="<button class='x'>×</button><h3>Apply-grades prompt — "+esc(s.section)+"</h3><div class='sub'>Copy this into a chat with your grading assistant.</div><div style='margin:10px 0'><button class='act' id='cp'>Copy</button></div><pre id='ptxt'>"+esc(txt)+"</pre>";
+ p.innerHTML="<button class='x'>×</button><h3>Apply-grades prompt - "+esc(s.section)+"</h3><div class='sub'>Copy this into a chat with your grading assistant.</div><div style='margin:10px 0'><button class='act' id='cp'>Copy</button></div><pre id='ptxt'>"+esc(txt)+"</pre>";
  d.append(p); document.body.append(d);
  const close=()=>d.remove(); p.querySelector(".x").onclick=close; d.onclick=e=>{if(e.target===d)close()};
  $("#cp").onclick=()=>{navigator.clipboard.writeText(txt).then(()=>{$("#cp").textContent="Copied ✓"})};
+}
+
+// Deliver the section's DETERMINISTIC activities (auto-graded tests + quizzes) to
+// student workspaces AND Canvas in one prompt. Mirrors the Finalize prompt's
+// safety framing but WITHOUT aiScore gating - these scores are final, not held.
+// AI/held activities are excluded on purpose (they flow through AI Review -> Finalize).
+function showDeliver(s){
+ const det=s.assignments.filter(a=>a.kind==="push"||a.kind==="quiz");
+ const held=s.assignments.filter(a=>a.aiGraded).map(a=>a.id);
+ const manual=s.assignments.filter(a=>a.manual).map(a=>a.id);
+ const graded=det.map(a=>({a,n:s.students.map(st=>st.activities[a.id]).filter(Boolean).length})).filter(x=>x.n>0);
+ const pub=graded.filter(x=>x.a.publish);
+ const canvasRows=graded.map(x=>"  - "+x.a.id+": "+(x.a.totalPoints!=null?x.a.totalPoints+" pts":x.a.autoPoints!=null?x.a.autoPoints+" pts":x.a.quiz?"quiz (raw tests scaled to Canvas)":"raw tests scaled to Canvas")+", "+x.n+" students graded").join("\\n")||"  (no deterministic activity has graded students yet)";
+ const pubRows=pub.map(x=>"  - "+x.a.id+(x.a.quiz?" (quiz)":"")).join("\\n")||"  (none of the deterministic activities are flagged \\"publish\\": true)";
+ const txt=
+"# Deliver reviewed grades - "+s.subject+" (section "+s.section+") - deterministic activities\\n\\n"+
+"These are the section's DETERMINISTIC activities (auto-graded tests + quizzes). Their gradebook scores are final - no AI review needed. Deliver them to student workspaces (the \\"publish\\": true ones) and to Canvas. Work from: "+s.dir+"\\n\\n"+
+"## Push to Canvas - deterministic activities with graded students ("+graded.length+")\\n"+canvasRows+"\\n\\n"+
+"## Publish to student workspaces (only activities flagged \\"publish\\": true)\\n"+pubRows+"\\n\\n"+
+"## Excluded on purpose - do NOT deliver from this prompt\\n"+
+"- AI-graded / held (review in the AI Review tab, then use its Finalize button): "+(held.join(", ")||"(none)")+"\\n"+
+"- Manual (entered in Canvas by hand): "+(manual.join(", ")||"(none)")+"\\n\\n"+
+"## Rules (do not violate)\\n"+
+"- gradebook/grades.csv is the source of truth. Never hand-edit a grade.\\n"+
+"- Dry-run BOTH the student publish and the Canvas push first; execute either only on my explicit \\"go\\".\\n"+
+"- Student FEEDBACK.md/GRADES.md and any Canvas comment carry NO \\"AI\\" mention.\\n"+
+"- Touch ONLY the deterministic activities above. The AI/held activities flow through the separate AI Review -> Finalize path; do not publish or push them here.\\n\\n"+
+"## Steps\\n"+
+"1. Re-run a grade sweep only if submissions changed since "+new Date(DATA.generatedAt).toLocaleDateString()+"; otherwise use the current gradebook.\\n"+
+"2. Student publish - DRY RUN first: publish.yml (publish=false), or tools/publish-grades.mjs "+s.section+" (dry-run by default). publish only ever delivers \\"publish\\": true activities, and it skips any AI student whose aiScore is blank - so this delivers exactly the deterministic publish:true activities above (plus any already-cleared AI students, which is fine). Show me the plan; confirm it lists those activities and their graded workspaces.\\n"+
+"3. On my \\"go\\": run the student publish for real (publish=true / --execute).\\n"+
+"4. Canvas push in CHECK mode: tools/canvas-push.mjs --section="+s.section+" --check. Show the report: # grades, # students matched, per-activity counts, and ANY unmatched students or points-possible mismatches. Confirm it matches the Canvas preview above and that NO held or manual activity appears (canvas-push holds AI activities and skips manual automatically).\\n"+
+"5. On my \\"go\\": re-run with --execute.\\n"+
+"6. VERIFY: pushed count == matched students x pushed activities; spot-check 2-3 students' Canvas values and their delivered GRADES.md/FEEDBACK.md against gradebook/grades.csv; confirm no held or manual activity was delivered.\\n";
+ const d=el("div","drawer on"); const p=el("div","dp");
+ p.innerHTML="<button class='x'>×</button><h3>Deliver to Canvas + workspaces - "+esc(s.section)+"</h3><div class='sub'>"+graded.length+" deterministic activit(y/ies) to push · "+pub.length+" to publish to workspaces · AI/held + manual excluded</div><div style='margin:10px 0'><button class='act' id='cp'>Copy prompt</button></div><pre id='ptxt'>"+esc(txt)+"</pre>";
+ d.append(p); document.body.append(d);
+ const close=()=>d.remove(); p.querySelector(".x").onclick=close; d.onclick=e=>{if(e.target===d)close()};
+ $("#cp").onclick=()=>navigator.clipboard.writeText(txt).then(()=>$("#cp").textContent="Copied ✓");
 }
 
 function toggleTheme(){const r=document.documentElement;const cur=r.getAttribute("data-color-scheme")|| (matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");r.setAttribute("data-color-scheme",cur==="dark"?"light":"dark");render();}

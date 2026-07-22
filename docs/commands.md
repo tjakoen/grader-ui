@@ -17,8 +17,17 @@ Code session, and the AI performs the writes as `git`/`gh` operations
 ## Intents (the dashboard generates these; the AI executes them)
 
 - **Apply-grades prompt** (Gradebook tab). Emits the reviewed grades for a
-  section and instructs the assistant to write them into the teacher repo's
-  gradebook and, where flagged, publish. Works from the teacher repo path.
+  section and instructs the assistant to push the deterministic (non-AI) activities
+  to Canvas in check-then-execute order. Canvas-only. Works from the teacher repo path.
+- **Deliver to Canvas + workspaces** (Gradebook tab). The all-activities delivery
+  intent for a section's DETERMINISTIC activities (auto-graded tests + quizzes):
+  student publish (`publish.yml` / `publish-grades.mjs`, only the `publish: true`
+  ones) plus a Canvas push, both dry-run first and gated on the instructor's go.
+  It has NO `aiScore` gating because these scores are final, not held. AI-graded /
+  held activities and manual ones are excluded on purpose (held flows through the
+  AI Review tab's Finalize; manual is entered in Canvas by hand). Each activity
+  column in the Gradebook matrix carries a **kind chip** (push / held / quiz /
+  manual) so every activity is visibly part of the review surface.
 - **Apply reviewed AI grades** (AI Review tab). Emits each reviewed decision
   (final score + edited student-facing / instructor-only text), instructs the
   assistant to write back the correct half of `gradebook/notes/<id>/<repo>.md`
@@ -29,11 +38,10 @@ Code session, and the AI performs the writes as `git`/`gh` operations
 - **Finalize and deliver** (AI Review tab, per activity). Emits the delivery
   prompt: student publish plus Canvas push, for the cleared (approved + override)
   students only, dry-run first and gated on the instructor's go. It lists the
-  cleared repos and the held-out ones explicitly. Note: `publish-grades.mjs` does
-  not gate on `aiScore`, so the prompt restricts the publish to the cleared repos
-  (the workflow's `repo` input, one run per repo) rather than an activity-wide
-  publish. Adding an `aiScore` gate to `publish-grades.mjs` (shared across the six
-  teacher repos) would make an activity-wide publish safe and finalize one-shot.
+  cleared repos and the held-out ones explicitly. `publish-grades.mjs` now gates on
+  `aiScore` (a blank `aiScore` holds a student out of BOTH the student publish and
+  the Canvas push), so an activity-wide `publish only=<id>` delivers exactly the
+  cleared students and finalize is effectively one-shot.
 
 ## The review gate (invariant)
 
