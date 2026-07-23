@@ -6,18 +6,41 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { madeWith } from "@tjakoen/grain/scripts/made-with.js";
+
 import { SECTIONS as CFG, paths } from "../lib/config.mjs";
 const SECTIONS = CFG.map(s => ({ key: s.key, subject: s.subject, section: s.section, dir: s.dir }));
 
-// GRAIN theme, consumed from the installed @tjakoen/grain package at BUILD time and inlined, so
-// the dashboard stays a single self-contained offline file (no node_modules / CDN at view time).
-const grainCss = n => fs.readFileSync(fileURLToPath(import.meta.resolve("@tjakoen/grain/styles/" + n)), "utf8");
+// GRAIN, consumed from the installed @tjakoen/grain package at BUILD time and inlined, so the
+// dashboard stays a single self-contained offline file (no node_modules / CDN at view time).
+// Three page-level stylesheets (tokens -> base/skin -> grade mechanism), the Baguette flavor,
+// and the REAL component CSS for every grain component the dashboard composes.
+const grainFile = p => fs.readFileSync(fileURLToPath(import.meta.resolve("@tjakoen/grain/" + p)), "utf8");
 const grainFont = f => "data:font/woff2;base64," + fs.readFileSync(fileURLToPath(import.meta.resolve("@tjakoen/grain/fonts/" + f))).toString("base64");
-const GRAIN = grainCss("variables.css")
-  .replace(/@import\s+"themes\/[^"]+";\s*/g, "")                                          // drop optional flavors (Sourdough is the :root default)
-  .replace(/url\("\/fonts\/([^"]+\.woff2)"\)/g, (_m, f) => 'url("' + grainFont(f) + '")')  // embed Redaction woff2 offline
-  + "\n" + grainCss("grain.css")                                                           // the grade-as-signal mechanism (data-grade / .field)
-  + "\n" + grainCss("themes/baguette.css");                                                // the Baguette flavor (data-theme="baguette")
+const GRAIN_COMPONENTS = [
+  "components/atoms/b-badge/b-badge.css",        // .badge — kind/status/decision tags
+  "components/atoms/b-button/b-button.css",      // .btn — every action
+  "components/atoms/b-input/b-input.css",        // .field/.field__input — search, override, feedback editors
+  "components/atoms/b-select/b-select.css",      // .field__select — the code-file picker
+  "components/atoms/b-meter/b-meter.css",        // .meter — review progress
+  "components/atoms/code-block/code-block.css",  // .code-block — prompts, notes, source viewer
+  "components/molecules/card/card.css",          // .card — every panel
+  "components/molecules/stat-tile/stat-tile.css",// .stat — the section KPI strip
+  "components/molecules/table/table.css",        // .table/.table-scroll — matrix, queue, Canvas preview
+  "components/molecules/callout/callout.css",    // .callout — the Canvas-panel aside
+  "components/molecules/tab/tab.css",            // .tab — section/mode/activity switchers
+  "components/molecules/made-with/made-with.css",// .made-with — the fleet byline footer
+  "components/organisms/tab-bar/tab-bar.css",    // .tab-bar — the strip the tabs sit in
+];
+const GRAIN = [
+  grainFile("styles/variables.css")
+    .replace(/@import\s+"themes\/[^"]+";\s*/g, "")                                          // drop flavor imports (relative @import breaks when inlined)
+    .replace(/url\("\/fonts\/([^"]+\.woff2)"\)/g, (_m, f) => 'url("' + grainFont(f) + '")'), // embed Redaction woff2 offline
+  grainFile("styles/global.css"),                                                            // base/skin (paper, type, links, .muted, focus)
+  grainFile("styles/grain.css"),                                                             // the grade-as-signal mechanism (data-grade / .field)
+  grainFile("styles/themes/baguette.css"),                                                   // the Baguette flavor (data-theme="baguette")
+  ...GRAIN_COMPONENTS.map(grainFile),
+].join("\n");
 
 const parse = (line) => { const o=[];let c="",q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(q){if(ch==='"'&&line[i+1]==='"'){c+='"';i++;}else if(ch==='"')q=false;else c+=ch;}else if(ch==='"')q=true;else if(ch===','){o.push(c);c="";}else c+=ch;}o.push(c);return o;};
 const dec = (s) => { try { return s ? Buffer.from(s,"base64").toString("utf8") : ""; } catch { return ""; } };
@@ -124,87 +147,96 @@ function TEMPLATE(data) {
 ${fs.existsSync(paths.codeBundle) ? '<script src="grading-review-code.js"></script>' : "<script>window.CODE={};</script>"}
 <script>const DATA=${json};const SHOTS=${JSON.stringify(SHOTS).replace(/</g,"\\u003c")};</script>
 <script>${JS()}</script>
+${madeWith()}
 </body></html>`;
 }
 
 function CSS(){ return `
 ${GRAIN}
-/* ---- grader-ui bridge: map its layout aliases onto grain's real tokens (grain stays the source of truth) ---- */
-:root{--bg:var(--color-bg);--panel2:var(--paper-2);--line:var(--line-soft);--mut:var(--ink-muted);--acc:var(--color-accent);--on-acc:var(--color-accent-contrast);--radius:var(--radius-md);
+/* ================================================================================
+   grader-ui PRODUCT CSS (everything below is grader-ui's own, on grain's tokens).
+   Two kinds of rules live here, nothing else:
+   1. Layout/composition grain leaves to the parent (the wide page column, the stats
+      grid, card spacing, the review drawer, the matrix's sticky column).
+   2. The documented monochrome exceptions (docs/grain-for-ai.md): a grading matrix
+      genuinely needs status hues, heat cells, and syntax tint — grain is monochrome
+      by doctrine, so these stay product-owned and never go upstream.
+   ================================================================================ */
+:root{--wrap-max:1500px;
   --good:#3f6d3a;--warn:#8a6410;--bad:#a12f22;--held:#5a3fa0;--tc:#6a7a52;--ts:#9a5b2a;--tn:#4a7a4a;--tk:#3a5a8a;--tg:#5a7a6a}
 @media(prefers-color-scheme:dark){:root:not([data-color-scheme=light]){--good:#7fae70;--warn:#d0a24a;--bad:#e08a7a;--held:#b79af0;--tc:#9ab07a;--ts:#d0a07a;--tn:#a0c090;--tk:#8aa0d0;--tg:#8ab0a0}}
 :root[data-color-scheme=dark]{--good:#7fae70;--warn:#d0a24a;--bad:#e08a7a;--held:#b79af0;--tc:#9ab07a;--ts:#d0a07a;--tn:#a0c090;--tk:#8aa0d0;--tg:#8ab0a0}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--font-smooth)}
-h1,h2,h3{font-family:var(--font-accent)}
-a{color:var(--acc)}
-.wrap{max-width:1500px;margin:0 auto;padding:20px}
-h1{font-size:20px;margin:0 0 2px}.sub{color:var(--mut);font-size:13px}
-.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:16px 0}
-.tab{padding:8px 14px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:99px;cursor:pointer;font-size:13px}
-.tab.on{background:var(--acc);border-color:var(--acc);color:var(--on-acc);font-weight:600}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0}
-.tile{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px}
-.tile .n{font-size:22px;font-weight:700}.tile .l{color:var(--mut);font-size:12px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);margin:14px 0;overflow:hidden}
-.card h2{font-size:14px;margin:0;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--panel2)}
-.card .bd{padding:12px 14px}
-.scroll{overflow-x:auto}
-table{border-collapse:collapse;width:100%;font-size:13px}
-th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
-th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(--panel2);z-index:2}
-.matrix td.stu,.matrix th.stu{position:sticky;left:0;background:var(--panel);z-index:1;max-width:230px;overflow:hidden;text-overflow:ellipsis}
-.matrix th.stu{z-index:3;background:var(--panel2)}
-.cell{cursor:pointer;text-align:center;font-variant-numeric:tabular-nums;border-radius:6px}
-.cell:hover{outline:2px solid var(--acc);outline-offset:-2px}
-.b{display:inline-block;padding:1px 7px;border-radius:99px;font-size:11px;font-weight:600}
-.b.held{background:color-mix(in srgb,var(--held) 22%,transparent);color:var(--held)}
-.b.push{background:color-mix(in srgb,var(--good) 20%,transparent);color:var(--good)}
-.b.manual{background:color-mix(in srgb,var(--mut) 22%,transparent);color:var(--mut)}
-.b.quiz{background:color-mix(in srgb,var(--tk) 24%,transparent);color:var(--tk)}
-.b.warn{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn)}
-.mut{color:var(--mut)}.rt{text-align:right}.center{text-align:center}
-.pill{font-size:11px;color:var(--mut)}
-.tot{font-weight:700;font-variant-numeric:tabular-nums}
-button.act{background:var(--acc);color:var(--on-acc);border:0;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:600}
-button.gh{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px}
-input.search{background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:7px 10px;width:240px;font-size:13px}
-.drawer{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;z-index:50}
+/* page column — a review matrix needs the full window, not grain's 768px reading column */
+.wrap{max-width:var(--wrap-max);margin:0 auto;padding:var(--space-5) var(--space-4)}
+h1{font-size:var(--text-2xl);margin:0 0 var(--space-1)}
+/* tab strips (grain tab/tab-bar) — parent chrome: a quiet band so the active tab's
+   merge-into-the-page read works outside an app-shell topbar */
+.wrap .tab-bar,.dp .tab-bar{flex:0 1 auto;background:var(--paper-2);border-bottom:1px solid var(--color-line);margin-top:var(--space-4)}
+.tab-bar .tab{cursor:pointer}
+.dp .tab-bar{display:inline-flex;margin:0 0 var(--space-3)}
+/* the review drawer's Screenshots/Code switch renders its tabs as real <button>s */
+button.tab{background:none;border:0;border-right:1px solid var(--color-line)}
+button.tab:disabled{opacity:.4;cursor:not-allowed}
+/* stats strip — parent layout for grain stat tiles */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(10rem,1fr));gap:var(--space-3);margin:var(--space-4) 0}
+/* cards — page-level spacing (parent-owned) */
+.wrap>.card,#matrixcard{margin:var(--space-4) 0}
+.card>.table-scroll:last-child,.card>.table-scroll:last-child .table{margin-bottom:0}
+/* matrix — sticky student column + dense numeric cells */
+.matrix th,.matrix td{white-space:nowrap}
+.matrix th:first-child,.matrix td:first-child{padding-left:var(--space-2)}
+.matrix td.stu,.matrix th.stu{position:sticky;left:0;background:var(--paper);z-index:1;max-width:230px;overflow:hidden;text-overflow:ellipsis}
+.cell{cursor:pointer;text-align:center;font-variant-numeric:tabular-nums}
+.cell:hover{outline:2px solid var(--color-accent);outline-offset:-2px}
+tr[data-s]{cursor:pointer}
+/* status hues on grain's badge — tone is a data-attribute, hue is the documented exception */
+.badge[data-tone]{white-space:nowrap}
+.badge[data-tone=good]{color:var(--good);border-color:var(--good)}
+.badge[data-tone=warn]{color:var(--warn);border-color:var(--warn)}
+.badge[data-tone=bad]{color:var(--bad);border-color:var(--bad)}
+.badge[data-tone=held]{color:var(--held);border-color:var(--held)}
+.badge[data-tone=quiz]{color:var(--tk);border-color:var(--tk)}
+.badge[data-tone=muted]{color:var(--color-muted)}
+.mut{color:var(--color-muted)}.rt{text-align:right}.center{text-align:center}
+.pill{font-size:var(--text-xs);color:var(--color-muted);font-weight:var(--font-weight-regular)}
+.tot{font-weight:var(--font-weight-bold);font-variant-numeric:tabular-nums}
+.legend{display:flex;gap:var(--space-4);flex-wrap:wrap;color:var(--color-muted);font-size:var(--text-xs);margin:var(--space-2) 0}
+/* control row widths — the field atoms are flex:1 by default; pin the loose ones */
+input.search{width:15rem;flex:none}
+input.num{width:4.5rem;flex:none}
+.ctl{display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;margin-top:var(--space-2)}
+.hdr-actions{float:right;display:flex;gap:var(--space-2);align-items:center}
+.meter{margin-top:var(--space-3)}
+/* review drawer — product-owned (grain has no side-sheet organism) */
+.drawer{position:fixed;inset:0;background:color-mix(in srgb,var(--ink) 45%,transparent);display:none;z-index:50}
 .drawer.on{display:block}
-.dp{position:absolute;right:0;top:0;height:100%;width:min(720px,94vw);background:var(--panel);border-left:1px solid var(--line);overflow:auto;padding:18px 20px}
-.dp h3{margin:0 0 2px}.dp .x{float:right;cursor:pointer;color:var(--mut);font-size:20px;border:0;background:none}
-pre{white-space:pre-wrap;word-wrap:break-word;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px;font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
-.legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--mut);font-size:12px;margin:6px 0}
-.tglbtn{float:right;cursor:pointer;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:5px 10px;font-size:12px}
-/* wide 2-col review panel */
+.dp{position:absolute;right:0;top:0;height:100%;width:min(720px,94vw);background:var(--paper);border-left:1px solid var(--color-line);overflow:auto;padding:var(--space-5)}
+.dp h3{margin:0 0 var(--space-1)}
+.dp .x{float:right;cursor:pointer;color:var(--color-muted);font-size:var(--text-xl);border:0;background:none}
 .dp.wide{width:min(1240px,97vw)}
-.rvhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px}
-.rvnav{margin-left:auto;display:flex;align-items:center;gap:6px}
-.rvnav .cnt{color:var(--mut);font-size:12px;font-variant-numeric:tabular-nums;min-width:52px;text-align:center}
-.chip{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700}
-.chip.todo{background:color-mix(in srgb,var(--mut) 22%,transparent);color:var(--mut)}
-.chip.ok{background:color-mix(in srgb,var(--good) 22%,transparent);color:var(--good)}
-.chip.ov{background:color-mix(in srgb,var(--held) 24%,transparent);color:var(--held)}
-.chip.fl{background:color-mix(in srgb,var(--warn) 24%,transparent);color:var(--warn)}
-.rev2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-top:12px}
+.rvhead{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;margin-bottom:var(--space-1)}
+.rvnav{margin-left:auto;display:flex;align-items:center;gap:var(--space-2)}
+.rvnav .cnt{color:var(--color-muted);font-size:var(--text-xs);font-variant-numeric:tabular-nums;min-width:52px;text-align:center}
+.rev2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--space-4);margin-top:var(--space-3)}
 @media(max-width:900px){.rev2{grid-template-columns:1fr}}
-.shots{display:flex;flex-direction:column;gap:12px}
-.shot{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel2)}
-.shot .cap{font-size:11px;color:var(--mut);padding:5px 8px;border-bottom:1px solid var(--line);text-transform:uppercase;letter-spacing:.04em}
-.shot img{display:block;width:100%;height:auto;cursor:zoom-in}
-.noshot{border:1px dashed var(--line);border-radius:8px;padding:24px;text-align:center;color:var(--mut);font-size:13px}
 .rvcol{min-width:0}
-.lvtoggle{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:10px}
-.lvbtn{background:var(--panel2);color:var(--ink);border:0;border-right:1px solid var(--line);padding:5px 12px;font-size:12px;cursor:pointer}
-.lvbtn:last-child{border-right:0}
-.lvbtn.on{background:var(--acc);color:var(--on-acc);font-weight:600}
-.lvbtn:disabled{opacity:.4;cursor:not-allowed}
-.codepre{white-space:pre;overflow:auto;max-height:74vh;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;tab-size:2}
+.decision{display:flex;gap:var(--space-2);flex-wrap:wrap;align-items:center}
+/* screenshot panes */
+.shots{display:flex;flex-direction:column;gap:var(--space-3)}
+.shot{border:1px solid var(--color-line);border-radius:var(--radius-md);overflow:hidden;background:var(--paper-2)}
+.shot .cap{font-size:var(--text-xs);color:var(--color-muted);padding:var(--space-1) var(--space-2);border-bottom:1px solid var(--color-line);text-transform:uppercase;letter-spacing:.04em}
+.shot img{display:block;width:100%;height:auto;cursor:zoom-in}
+.noshot{border:1px dashed var(--color-line);border-radius:var(--radius-md);padding:var(--space-6);text-align:center;color:var(--color-muted);font-size:var(--text-sm)}
+/* prompt/note blocks ride grain's code-block; prompts are prose-ish, so they wrap */
+.prompt{white-space:pre-wrap;word-wrap:break-word;font-size:var(--text-xs)}
+/* source viewer — code-block + a cap height and the syntax tint (documented exception) */
+.codepre{white-space:pre;max-height:74vh;font-size:var(--text-xs);tab-size:2}
 .codepre .tc{color:var(--tc);font-style:italic}.codepre .ts{color:var(--ts)}.codepre .tn{color:var(--tn)}.codepre .tk{color:var(--tk)}.codepre .tg{color:var(--tg)}
-select.cfile{width:100%;margin-bottom:8px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:7px 10px;font:12px ui-monospace,Menlo,monospace}
-.ftlab{display:block;font-size:12px;font-weight:600;margin:10px 0 4px}
-.fta{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:10px;font-size:14px;line-height:1.55;resize:vertical}
-.fta.mono{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
-.fta:focus{outline:2px solid var(--acc);outline-offset:-1px}
+select.cfile{margin-bottom:var(--space-2);font-family:var(--font-mono);font-size:var(--text-xs)}
+/* feedback editors — grain fields; product owns only sizing and the mono variant */
+.dp .field{margin-top:var(--space-3)}
+textarea.fta{resize:vertical;line-height:var(--leading-relaxed)}
+textarea.fta.mono{font-family:var(--font-mono);font-size:var(--text-xs);line-height:1.5}
 `;}
 
 function JS(){ return `
@@ -251,14 +283,14 @@ function render(){
  const s=DATA.sections[cur];
  app.innerHTML="";
  const w=el("div","wrap");
- const head=el("div"); head.innerHTML='<div style="float:right;display:flex;gap:6px;align-items:center"><button class="gh" id="expDec" title="Download all review decisions as a JSON backup">⭳ Export decisions</button><button class="gh" id="impDec" title="Merge decisions from a JSON backup file">⭱ Import</button><input type="file" id="impFile" accept="application/json,.json" style="display:none"></div><button class="tglbtn" id="theme">◐ theme</button><h1>HAU Grading Review</h1><div class="sub">generated '+new Date(DATA.generatedAt).toLocaleString()+' · <b>local file, contains student data</b></div>';
+ const head=el("div"); head.innerHTML='<div class="hdr-actions"><button class="btn" data-size="sm" data-variant="soft" id="expDec" title="Download all review decisions as a JSON backup">⭳ Export decisions</button><button class="btn" data-size="sm" data-variant="soft" id="impDec" title="Merge decisions from a JSON backup file">⭱ Import</button><input type="file" id="impFile" accept="application/json,.json" style="display:none"><button class="btn" data-size="sm" data-variant="soft" id="theme">◐ scheme</button></div><h1>HAU Grading Review</h1><div class="muted">generated '+new Date(DATA.generatedAt).toLocaleString()+' · <b>local file, contains student data</b></div>';
  w.append(head);
- const tabs=el("div","tabs");
- DATA.sections.forEach((x,i)=>{const t=el("div","tab"+(i===cur?" on":""),esc(x.subject)+" · "+x.section);t.onclick=()=>{cur=i;q="";revAct=null;render()};tabs.append(t)});
+ const tabs=el("nav","tab-bar");
+ DATA.sections.forEach((x,i)=>{const t=el("div","tab",esc(x.subject)+" · "+x.section);if(i===cur)t.dataset.active="true";t.onclick=()=>{cur=i;q="";revAct=null;render()};tabs.append(t)});
  w.append(tabs);
  // mode toggle
- const mt=el("div","tabs"); mt.style.marginTop="-4px";
- [["book","Gradebook"],["ai","AI Review ("+s.stats.held+")"]].forEach(([k,l])=>{const b=el("div","tab"+(mode===k?" on":""),l);b.style.borderStyle="dashed";b.onclick=()=>{mode=k;render()};mt.append(b)});
+ const mt=el("nav","tab-bar");
+ [["book","Gradebook"],["ai","AI Review ("+s.stats.held+")"]].forEach(([k,l])=>{const b=el("div","tab",l);if(mode===k)b.dataset.active="true";b.onclick=()=>{mode=k;render()};mt.append(b)});
  w.append(mt);
  app.append(w);
  if(mode==="ai") renderAI(s,w); else renderBook(s,w);
@@ -269,17 +301,17 @@ function render(){
 }
 
 function renderBook(s,w){
- const tiles=el("div","tiles");
+ const tiles=el("div","stats");
  const avgP=avg(s.students.map(x=>x.tally.pushMax?x.tally.push/x.tally.pushMax:null));
  tiles.innerHTML=[
   ["Students",s.stats.students],["Activities",s.stats.activities],
-  ["Held for review",s.stats.held+' <span class="pill">AI, not auto-pushed</span>'],
+  ["Held for review",s.stats.held,"AI, not auto-pushed"],
   ["Blank student.json",s.stats.blankStudentJson],
   ["Avg auto-push",avgP==null?"-":Math.round(avgP*100)+"%"],
- ].map(([l,n])=>'<div class="tile"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>').join("");
+ ].map(([l,n,sub])=>'<div class="stat"><span class="stat__value">'+n+'</span><span class="stat__label">'+l+'</span>'+(sub?'<span class="stat__sub">'+sub+'</span>':'')+'</div>').join("");
  w.append(tiles);
- const ctl=el("div"); ctl.style.margin="6px 0 0";
- ctl.innerHTML='<input class="search" id="q" placeholder="Filter students…" value="'+esc(q)+'"> <button class="gh" id="prompt">Generate apply-grades prompt →</button> <button class="act" id="deliver">Deliver to Canvas + workspaces →</button>';
+ const ctl=el("div","ctl");
+ ctl.innerHTML='<input class="field__input search" id="q" placeholder="Filter students…" value="'+esc(q)+'"> <button class="btn" data-size="sm" data-variant="soft" id="prompt">Generate apply-grades prompt →</button> <button class="btn" data-size="sm" id="deliver">Deliver to Canvas + workspaces →</button>';
  w.append(ctl);
  w.append(matrix(s));
  w.append(canvasPanel(s));
@@ -293,6 +325,10 @@ function renderMatrixOnly(s){ const old=$("#matrixcard"); if(old){const n=matrix
 function heldActs(s){return s.assignments.filter(a=>a.aiGraded)}
 function reviewRows(s,aid){return s.students.filter(st=>st.activities[aid]).map(st=>({st,r:st.activities[aid],dec:getDec(s.section,aid,skeyOf(st))}))}
 const isDecided=d=>!!(d&&d.status);
+// decision-state -> product badge tone (hue is the documented monochrome exception)
+const TONE={todo:"muted",ok:"good",ov:"held",fl:"warn"};
+// activity kind -> product badge tone
+const KTONE={push:"good",held:"held",quiz:"quiz",manual:"muted"};
 function decStatus(row){ const d=row.dec; if(!isDecided(d))return{k:"todo",l:d&&(d.studentText||d.instructorText||d.comment)?"edited":"unreviewed"}; if(d.status==="approve")return{k:"ok",l:"approved"}; if(d.status==="override")return{k:"ov",l:"override "+d.score}; return{k:"fl",l:"flagged"}; }
 function finalScore(row){ const d=row.dec; if(!d)return null; if(d.status==="override")return d.score; if(d.status==="approve")return row.r.proposed; return null; }
 // split an AI note into the student-facing prose and the instructor-only block
@@ -308,33 +344,33 @@ function parseNote(note){
 
 function renderAI(s,w){
  const acts=heldActs(s);
- if(!acts.length){w.append(el("div","card",'<div class="bd mut">No AI-graded activities in this section.</div>'));return;}
+ if(!acts.length){const c=el("div","card",'<p class="card__body">No AI-graded activities in this section.</p>');c.dataset.pad="sm";w.append(c);return;}
  if(!revAct||!acts.find(a=>a.id===revAct)) revAct=acts[0].id;
- const sub=el("div","tabs");
- acts.forEach(a=>{const rows=reviewRows(s,a.id);const done=rows.filter(x=>isDecided(x.dec)).length;const b=el("div","tab"+(revAct===a.id?" on":""),esc(a.id)+" <span class='pill'>"+done+"/"+rows.length+"</span>");b.onclick=()=>{revAct=a.id;render()};sub.append(b)});
+ const sub=el("nav","tab-bar");
+ acts.forEach(a=>{const rows=reviewRows(s,a.id);const done=rows.filter(x=>isDecided(x.dec)).length;const b=el("div","tab",esc(a.id)+" <span class='pill'>"+done+"/"+rows.length+"</span>");if(revAct===a.id)b.dataset.active="true";b.onclick=()=>{revAct=a.id;render()};sub.append(b)});
  w.append(sub);
  const rows=reviewRows(s,revAct);
  const done=rows.filter(x=>isDecided(x.dec)).length, appr=rows.filter(x=>x.dec&&x.dec.status==="approve").length, ov=rows.filter(x=>x.dec&&x.dec.status==="override").length, fl=rows.filter(x=>x.dec&&x.dec.status==="flag").length;
  // progress + actions
- const bar=el("div","card"); const pct=rows.length?Math.round(done/rows.length*100):0;
- bar.innerHTML='<div class="bd"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'+
-  '<div><b>'+esc(revAct)+'</b> - reviewed <b>'+done+'/'+rows.length+'</b> · <span class="b push">'+appr+' approved</span> <span class="b held">'+ov+' override</span> <span class="b warn">'+fl+' flagged</span></div>'+
-  '<div><button class="gh" id="genFb">Generate feedback → prompt</button> <button class="gh" id="apprAll">Approve all unreviewed</button> <button class="gh" id="reset">Reset</button> <button class="act" id="applyAI">Apply reviewed → prompt</button> <button class="act" id="finalize">Finalize → publish + Canvas</button></div></div>'+
-  '<div style="height:6px;background:var(--panel2)"><div style="height:100%;width:'+pct+'%;background:var(--acc)"></div></div>';
+ const bar=el("div","card"); bar.dataset.pad="sm"; const pct=rows.length?Math.round(done/rows.length*100):0;
+ bar.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'+
+  '<div><b>'+esc(revAct)+'</b> - reviewed <b>'+done+'/'+rows.length+'</b> · <span class="badge" data-tone="good">'+appr+' approved</span> <span class="badge" data-tone="held">'+ov+' override</span> <span class="badge" data-tone="warn">'+fl+' flagged</span></div>'+
+  '<div><button class="btn" data-size="sm" data-variant="soft" id="genFb">Generate feedback → prompt</button> <button class="btn" data-size="sm" data-variant="soft" id="apprAll">Approve all unreviewed</button> <button class="btn" data-size="sm" data-variant="soft" id="reset">Reset</button> <button class="btn" data-size="sm" id="applyAI">Apply reviewed → prompt</button> <button class="btn" data-size="sm" id="finalize">Finalize → publish + Canvas</button></div></div>'+
+  '<div class="meter" role="meter" aria-label="Review progress" aria-valuenow="'+pct+'" aria-valuemin="0" aria-valuemax="100"><span class="meter__seg" data-tone="ok" style="--seg:'+pct+'%"></span></div>';
  w.append(bar);
  // queue table
- const card=el("div","card"); card.append(el("h2",null,"Review queue - click a row to read the feedback and decide"));
- const scr=el("div","scroll"); const t=el("table");
+ const card=el("div","card"); card.dataset.pad="sm"; card.append(el("h2","card__title","Review queue - click a row to read the feedback and decide"));
+ const scr=el("div","table-scroll"); const t=el("table","table");
  const max=s.assignments.find(a=>a.id===revAct).totalPoints;
  t.innerHTML="<tr><th>Student</th><th>#</th><th class='center'>Proposed</th><th class='center'>AI-authored likelihood</th><th class='center'>Decision</th><th class='center'>Final</th></tr>"+
  rows.map(row=>{
    const stt=decStatus(row), fin=finalScore(row);
-   const flag=row.r.aiFlag||"-"; const fl=/high/i.test(flag)?"bad":/medium/i.test(flag)?"warn":"push";
+   const flag=row.r.aiFlag||"-"; const fl=/high/i.test(flag)?"bad":/medium/i.test(flag)?"warn":"good";
    const skey=esc(skeyOf(row.st));
-   return "<tr data-s='"+skey+"' style='cursor:pointer'><td>"+esc(row.st.name||"(blank)")+(row.r.triage?" <span class='b warn' title='"+esc(row.r.triage)+"'>flag</span>":"")+"</td><td class='mut'>"+esc(row.st.number||"-")+"</td>"+
-     "<td class='center'>"+(row.r.proposed!=null?row.r.proposed+"/"+max:"<span class='b warn'>no score</span>")+"</td>"+
-     "<td class='center'><span class='b "+fl+"'>"+esc(flag.split(" - ")[0])+"</span></td>"+
-     "<td class='center'><span class='b "+({todo:"manual",ok:"push",ov:"held",fl:"warn"}[stt.k])+"'>"+stt.l+"</span></td>"+
+   return "<tr data-s='"+skey+"'><td>"+esc(row.st.name||"(blank)")+(row.r.triage?" <span class='badge' data-tone='warn' title='"+esc(row.r.triage)+"'>flag</span>":"")+"</td><td class='mut'>"+esc(row.st.number||"-")+"</td>"+
+     "<td class='center'>"+(row.r.proposed!=null?row.r.proposed+"/"+max:"<span class='badge' data-tone='warn'>no score</span>")+"</td>"+
+     "<td class='center'><span class='badge' data-tone='"+fl+"'>"+esc(flag.split(" - ")[0])+"</span></td>"+
+     "<td class='center'><span class='badge' data-tone='"+({todo:"muted",ok:"good",ov:"held",fl:"warn"}[stt.k])+"'>"+stt.l+"</span></td>"+
      "<td class='center tot'>"+(fin!=null?fin+"/"+max:"-")+"</td></tr>";
  }).join("");
  scr.append(t); card.append(scr); w.append(card);
@@ -357,8 +393,8 @@ const codeAvail=(sec,repo)=>(window.CODE&&window.CODE[sec+"|"+repo])||null;
 function codeHTML(sec,repo){
  const files=codeAvail(sec,repo);
  if(!files||!files.length) return "<div class='noshot'>No code cached for this submission.<br><span style='font-size:12px'>run <b>node fetch-code.mjs</b> at the HAU root to fetch source</span></div>";
- return "<select class='cfile' id='cfile'>"+files.map((f,i)=>"<option value='"+i+"'>"+esc(f.path)+"</option>").join("")+"</select>"+
-   "<pre class='codepre' id='cpre'>"+hl(files[0].content,files[0].lang)+"</pre>";
+ return "<select class='field__select cfile' id='cfile'>"+files.map((f,i)=>"<option value='"+i+"'>"+esc(f.path)+"</option>").join("")+"</select>"+
+   "<pre class='code-block codepre' id='cpre'>"+hl(files[0].content,files[0].lang)+"</pre>";
 }
 // tiny self-contained syntax highlighter (no external lib; local file:// safe)
 const HLKW=new Set("await async break case catch class const continue debugger default delete do else export extends false finally for from function if implements import in instanceof interface let new null of return super switch this throw true try typeof var void while with yield static get set public private protected abstract final dynamic bool int double num String List Map Widget build override late required as is enum mixin extension typedef on part show hide library".split(/\\s+/));
@@ -399,38 +435,38 @@ function openReview(s,aid,skey){
   const lv=leftView;
   const curDec=getDec(s.section,aid,sk);
   const stt=decStatus({dec:curDec});
-  const chip="<span class='chip "+stt.k+"'>"+stt.l+"</span>";
+  const chip="<span class='badge' data-tone='"+TONE[stt.k]+"'>"+stt.l+"</span>";
   const flag=r.aiFlag?r.aiFlag.split(" - ")[0]:null;
   p.innerHTML="<button class='x'>×</button>"+
    "<div class='rvhead'><h3 style='margin:0'>"+esc(st.name||"(blank)")+"</h3>"+chip+
-     "<div class='rvnav'><button class='gh' id='prev'"+(i<=0?" disabled":"")+">← Prev</button>"+
+     "<div class='rvnav'><button class='btn' data-size='sm' data-variant='soft' id='prev'"+(i<=0?" disabled":"")+">← Prev</button>"+
      "<span class='cnt'>"+(i+1)+" / "+order.length+"</span>"+
-     "<button class='gh' id='next'"+(i>=order.length-1?" disabled":"")+">Next →</button></div></div>"+
-   "<div class='sub'>"+esc(aid)+" · "+esc(sk)+" · @"+esc(st.github||"")+" · repo "+esc(r.repo)+"</div>"+
+     "<button class='btn' data-size='sm' data-variant='soft' id='next'"+(i>=order.length-1?" disabled":"")+">Next →</button></div></div>"+
+   "<div class='muted'>"+esc(aid)+" · "+esc(sk)+" · @"+esc(st.github||"")+" · repo "+esc(r.repo)+"</div>"+
    "<div class='legend'><span>Automated: <b>"+r.raw+"</b></span><span>AI proposed: <b data-grade='grain'>"+(r.proposed!=null?r.proposed+"/"+max:"-")+"</b></span>"+(flag?"<span>AI-authored: <b data-grade='grain'>"+esc(flag)+"</b></span>":"")+"</div>"+
    "<div class='rev2'>"+
     "<div class='rvcol'>"+
-     "<div class='lvtoggle'>"+
-      "<button class='lvbtn"+(lv==='shots'?' on':'')+"' data-lv='shots'"+(hasShots?'':' disabled')+">Screenshots</button>"+
-      "<button class='lvbtn"+(lv==='code'?' on':'')+"' data-lv='code'"+(hasCode?'':' disabled')+">Code"+(hasCode?" <span class='pill'>"+codeAvail(s.section,r.repo).length+"</span>":"")+"</button>"+
-     "</div>"+
+     "<nav class='tab-bar'>"+
+      "<button class='tab'"+(lv==='shots'?" data-active='true'":"")+" data-lv='shots'"+(hasShots?'':' disabled')+">Screenshots</button>"+
+      "<button class='tab'"+(lv==='code'?" data-active='true'":"")+" data-lv='code'"+(hasCode?'':' disabled')+">Code"+(hasCode?" <span class='pill'>"+codeAvail(s.section,r.repo).length+"</span>":"")+"</button>"+
+     "</nav>"+
      "<div class='shots' id='lvShots' style='display:"+(lv==='shots'?'flex':'none')+"'>"+shotsHTML(s.section,r.repo)+"</div>"+
      "<div id='lvCode' style='display:"+(lv==='code'?'block':'none')+"'>"+codeHTML(s.section,r.repo)+"</div>"+
     "</div>"+
     "<div class='rvcol'>"+
-     "<div class='card' style='margin:0 0 12px'><div class='bd'>"+
-      "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
-      "<button class='act' id='dApprove'>✓ Approve "+(r.proposed!=null?r.proposed+"/"+max:"")+"</button>"+
-      "<span>Override <input id='dOv' class='search' style='width:70px' type='number' min='0' max='"+max+"' value='"+(curDec&&curDec.status==='override'?curDec.score:(r.proposed!=null?r.proposed:''))+"'> /"+max+" <button class='gh' id='dOvBtn'>Set</button></span>"+
-      "<button class='gh' id='dFlag'>⚑ Flag</button>"+
-      "<button class='gh' id='dClear'>Clear</button></div>"+
-      "<input class='search' id='dComment' style='width:100%;margin-top:8px' placeholder='Private note to yourself (goes to the apply prompt)…' value='"+esc(curDec&&curDec.comment||"")+"'>"+
-     "</div></div>"+
-     "<label class='ftlab'>Student-facing feedback <span class='mut'>- delivered as FEEDBACK.md, prose only</span>"+(curDec&&curDec.studentText!=null?" <span class='chip ov' style='font-size:10px'>edited</span>":"")+"</label>"+
-     "<textarea id='dStudent' class='fta'"+(curDec&&curDec.studentText!=null?"":" data-grade='grain'")+" rows='10'>"+esc(curDec&&curDec.studentText!=null?curDec.studentText:orig.student)+"</textarea>"+
-     "<label class='ftlab'>Instructor-only notes <span class='mut'>- never delivered to the student</span>"+(curDec&&curDec.instructorText!=null?" <span class='chip ov' style='font-size:10px'>edited</span>":"")+"</label>"+
-     "<textarea id='dInstr' class='fta mono' rows='12'>"+esc(curDec&&curDec.instructorText!=null?curDec.instructorText:orig.instructor)+"</textarea>"+
-     "<div style='display:flex;gap:8px;align-items:center;margin-top:8px'><button class='act' id='dSave'>Save edits</button> <button class='gh' id='dRevert'>Revert to AI text</button> <span class='mut' id='dSaved' style='font-size:12px'></span></div>"+
+     "<div class='card' data-pad='sm' style='margin:0 0 12px'>"+
+      "<div class='decision'>"+
+      "<button class='btn' data-size='sm' id='dApprove'>✓ Approve "+(r.proposed!=null?r.proposed+"/"+max:"")+"</button>"+
+      "<span>Override <input id='dOv' class='field__input num' type='number' min='0' max='"+max+"' value='"+(curDec&&curDec.status==='override'?curDec.score:(r.proposed!=null?r.proposed:''))+"'> /"+max+" <button class='btn' data-size='sm' data-variant='soft' id='dOvBtn'>Set</button></span>"+
+      "<button class='btn' data-size='sm' data-variant='soft' id='dFlag'>⚑ Flag</button>"+
+      "<button class='btn' data-size='sm' data-variant='soft' id='dClear'>Clear</button></div>"+
+      "<input class='field__input' id='dComment' style='width:100%;margin-top:8px' placeholder='Private note to yourself (goes to the apply prompt)…' value='"+esc(curDec&&curDec.comment||"")+"'>"+
+     "</div>"+
+     "<label class='field'><span class='field__label'>Student-facing feedback <span class='mut'>- delivered as FEEDBACK.md, prose only</span>"+(curDec&&curDec.studentText!=null?" <span class='badge' data-tone='held'>edited</span>":"")+"</span>"+
+     "<textarea id='dStudent' class='field__input fta' data-grade='"+(curDec&&curDec.studentText!=null?"smooth":"grain")+"' rows='10'>"+esc(curDec&&curDec.studentText!=null?curDec.studentText:orig.student)+"</textarea></label>"+
+     "<label class='field'><span class='field__label'>Instructor-only notes <span class='mut'>- never delivered to the student</span>"+(curDec&&curDec.instructorText!=null?" <span class='badge' data-tone='held'>edited</span>":"")+"</span>"+
+     "<textarea id='dInstr' class='field__input fta mono' rows='12'>"+esc(curDec&&curDec.instructorText!=null?curDec.instructorText:orig.instructor)+"</textarea></label>"+
+     "<div style='display:flex;gap:8px;align-items:center;margin-top:8px'><button class='btn' data-size='sm' id='dSave'>Save edits</button> <button class='btn' data-size='sm' data-variant='soft' id='dRevert'>Revert to AI text</button> <span class='mut' id='dSaved' style='font-size:12px'></span></div>"+
     "</div>"+
    "</div>";
   p.querySelector(".x").onclick=close;
@@ -438,9 +474,9 @@ function openReview(s,aid,skey){
   if(prev)prev.onclick=()=>{if(idx>0)paint(idx-1)};
   if(next)next.onclick=()=>{if(idx<order.length-1)paint(idx+1)};
   // left-pane toggle (screenshots <-> code) - no repaint, just show/hide
-  p.querySelectorAll(".lvbtn[data-lv]").forEach(b=>b.onclick=()=>{ if(b.disabled)return; leftView=b.dataset.lv;
+  p.querySelectorAll(".tab[data-lv]").forEach(b=>b.onclick=()=>{ if(b.disabled)return; leftView=b.dataset.lv;
     $("#lvShots").style.display=leftView==="shots"?"flex":"none"; $("#lvCode").style.display=leftView==="code"?"block":"none";
-    p.querySelectorAll(".lvbtn").forEach(x=>x.classList.toggle("on",x.dataset.lv===leftView)); });
+    p.querySelectorAll(".tab[data-lv]").forEach(x=>{if(x.dataset.lv===leftView)x.dataset.active="true";else x.removeAttribute("data-active")}); });
   const cf=$("#cfile"); if(cf){ const files=codeAvail(s.section,r.repo); cf.onchange=()=>{ const f=files[+cf.value]; $("#cpre").innerHTML=hl(f.content,f.lang); }; }
   // gather the current text edits + comment, keeping only what differs from the AI original
   const collect=(extra)=>{ const d=Object.assign({},getDec(s.section,aid,sk)||{},extra);
@@ -454,7 +490,7 @@ function openReview(s,aid,skey){
   $("#dOvBtn").onclick=()=>save(collect({status:"override",score:+$("#dOv").value}));
   $("#dFlag").onclick=()=>save(collect({status:"flag"}));
   $("#dClear").onclick=()=>{setDec(s.section,aid,sk,null);paint(idx);};
-  $("#dSave").onclick=()=>{const d=collect({});setDec(s.section,aid,sk,Object.keys(d).length?d:null);$("#dSaved").textContent="saved ✓";const stt2=decStatus({dec:getDec(s.section,aid,sk)});const c=p.querySelector(".chip");if(c){c.className="chip "+stt2.k;c.textContent=stt2.l;}};
+  $("#dSave").onclick=()=>{const d=collect({});setDec(s.section,aid,sk,Object.keys(d).length?d:null);$("#dSaved").textContent="saved ✓";const stt2=decStatus({dec:getDec(s.section,aid,sk)});const c=p.querySelector(".rvhead .badge");if(c){c.dataset.tone=TONE[stt2.k];c.textContent=stt2.l;}};
   $("#dRevert").onclick=()=>{$("#dStudent").value=orig.student;$("#dInstr").value=orig.instructor;const d=collect({});setDec(s.section,aid,sk,Object.keys(d).length?d:null);paint(idx);};
  }
  d.onclick=e=>{if(e.target===d)close()};
@@ -480,7 +516,7 @@ function showGenFeedback(s,aid){
 "- Only process repos that have an input file; do not invent submissions.\\n\\n"+
 "When done, rebuild the dashboard (node src/build-dashboard.mjs) so I can review each draft and its proposed score, then Approve/Override/Flag here.\\n";
  const d=el("div","drawer on"); const p=el("div","dp");
- p.innerHTML="<button class='x'>×</button><h3>Generate AI feedback drafts - "+esc(aid)+"</h3><div class='sub'>"+pending.length+" submission(s) without a note yet · runs in a Claude Code session on your subscription (no GitHub Models)</div><div style='margin:10px 0'><button class='act' id='cp'>Copy prompt</button></div><pre id='ptxt'>"+esc(txt)+"</pre>";
+ p.innerHTML="<button class='x'>×</button><h3>Generate AI feedback drafts - "+esc(aid)+"</h3><div class='muted'>"+pending.length+" submission(s) without a note yet · runs in a Claude Code session on your subscription (no GitHub Models)</div><div style='margin:10px 0'><button class='btn' data-size='sm' id='cp'>Copy prompt</button></div><pre class='code-block prompt' id='ptxt'>"+esc(txt)+"</pre>";
  d.append(p); document.body.append(d);
  const close=()=>d.remove(); p.querySelector(".x").onclick=close; d.onclick=e=>{if(e.target===d)close()};
  $("#cp").onclick=()=>navigator.clipboard.writeText(txt).then(()=>$("#cp").textContent="Copied ✓");
@@ -519,7 +555,7 @@ flagged.map(x=>"  - "+(x.st.name||x.r.repo)+" ("+(x.st.number||"?")+") · "+x.r.
 "4. Verify the gradebook: overrides show my score, flagged/unreviewed aiScore are blank, approved are unchanged. Rebuild the dashboard (node src/build-dashboard.mjs) so I can review the applied grades before delivery.\\n\\n"+
 "Do NOT publish or push Canvas from this prompt, and do NOT flip \\"publish\\": true. This prompt writes grades only. Delivery (flip publish:true, publish to students, push Canvas, verify) is the separate Finalize step (the Finalize button emits that prompt), gated on my go. The student-facing FEEDBACK.md and the Canvas comment must stay free of any \\"AI\\" mention and of the instructor-only likelihood/vibecode line. The <<< >>> markers are delimiters only - do not include them in the files.\\n";
  const d=el("div","drawer on"); const p=el("div","dp");
- p.innerHTML="<button class='x'>×</button><h3>Apply reviewed AI grades - "+esc(aid)+"</h3><div class='sub'>"+decided.length+" to apply · "+flagged.length+" flagged · "+undone.length+" not reviewed</div><div style='margin:10px 0'><button class='act' id='cp'>Copy prompt</button> <button class='gh' id='csv'>Download CSV</button></div><pre id='ptxt'>"+esc(txt)+"</pre>";
+ p.innerHTML="<button class='x'>×</button><h3>Apply reviewed AI grades - "+esc(aid)+"</h3><div class='muted'>"+decided.length+" to apply · "+flagged.length+" flagged · "+undone.length+" not reviewed</div><div style='margin:10px 0'><button class='btn' data-size='sm' id='cp'>Copy prompt</button> <button class='btn' data-size='sm' data-variant='soft' id='csv'>Download CSV</button></div><pre class='code-block prompt' id='ptxt'>"+esc(txt)+"</pre>";
  d.append(p); document.body.append(d);
  const close=()=>d.remove(); p.querySelector(".x").onclick=close; d.onclick=e=>{if(e.target===d)close()};
  $("#cp").onclick=()=>navigator.clipboard.writeText(txt).then(()=>$("#cp").textContent="Copied ✓");
@@ -553,21 +589,21 @@ function showFinalize(s,aid){
 "5. On my \\"go\\": canvas-push --execute. Each cleared student gets their final score PLUS a rubric-breakdown comment (per-criterion points + feedback prose).\\n"+
 "6. VERIFY: each cleared student received FEEDBACK.md/GRADES.md and the correct Canvas grade + comment (spot-check 2-3), and NO held/flagged student got anything.\\n";
  const d=el("div","drawer on"); const p=el("div","dp");
- p.innerHTML="<button class='x'>×</button><h3>Finalize and deliver - "+esc(aid)+"</h3><div class='sub'>"+delivered.length+" cleared to deliver · "+heldOut.length+" held out</div><div style='margin:10px 0'><button class='act' id='cp'>Copy prompt</button></div><pre id='ptxt'>"+esc(txt)+"</pre>";
+ p.innerHTML="<button class='x'>×</button><h3>Finalize and deliver - "+esc(aid)+"</h3><div class='muted'>"+delivered.length+" cleared to deliver · "+heldOut.length+" held out</div><div style='margin:10px 0'><button class='btn' data-size='sm' id='cp'>Copy prompt</button></div><pre class='code-block prompt' id='ptxt'>"+esc(txt)+"</pre>";
  d.append(p); document.body.append(d);
  const close=()=>d.remove(); p.querySelector(".x").onclick=close; d.onclick=e=>{if(e.target===d)close()};
  $("#cp").onclick=()=>navigator.clipboard.writeText(txt).then(()=>$("#cp").textContent="Copied ✓");
 }
 
 function matrix(s){
- const card=el("div","card"); card.id="matrixcard";
- card.append(el("h2",null,"Gradebook - students × activities <span class='mut' style='font-weight:400'>(click a cell for feedback)</span>"));
- const leg=el("div","legend"); leg.style.padding="0 14px";
- leg.innerHTML='<span><span class="b push">push</span> auto-pushed to Canvas</span><span><span class="b held">held</span> AI proposal, review first</span><span><span class="b quiz">quiz</span> import to Canvas</span><span><span class="b manual">manual</span> hand-entered</span><span>cell = Canvas points / max</span>';
+ const card=el("div","card"); card.id="matrixcard"; card.dataset.pad="sm";
+ card.append(el("h2","card__title","Gradebook - students × activities <span class='mut' style='font-weight:400'>(click a cell for feedback)</span>"));
+ const leg=el("div","legend");
+ leg.innerHTML='<span><span class="badge" data-tone="good">push</span> auto-pushed to Canvas</span><span><span class="badge" data-tone="held">held</span> AI proposal, review first</span><span><span class="badge" data-tone="quiz">quiz</span> import to Canvas</span><span><span class="badge" data-tone="muted">manual</span> hand-entered</span><span>cell = Canvas points / max</span>';
  card.append(leg);
- const sc=el("div","scroll"); const t=el("table","matrix");
+ const sc=el("div","table-scroll"); const t=el("table","table matrix");
  const cols=s.assignments;
- let thead="<tr><th class='stu'>Student</th><th>#</th>"+cols.map(a=>"<th class='center'>"+esc(a.id)+"<br><span class='pill'>"+(a.totalPoints!=null?a.totalPoints+"pt":a.autoPoints!=null?a.autoPoints+"pt":"tests")+"</span><br><span class='b "+a.kind+"'>"+a.kind+"</span></th>").join("")+"<th class='center'>Push total</th><th class='center'>+Held</th></tr>";
+ let thead="<tr><th class='stu'>Student</th><th>#</th>"+cols.map(a=>"<th class='center'>"+esc(a.id)+"<br><span class='pill'>"+(a.totalPoints!=null?a.totalPoints+"pt":a.autoPoints!=null?a.autoPoints+"pt":"tests")+"</span><br><span class='badge' data-tone='"+KTONE[a.kind]+"'>"+a.kind+"</span></th>").join("")+"<th class='center'>Push total</th><th class='center'>+Held</th></tr>";
  const rows=s.students.filter(st=>!q||(st.name||"").toLowerCase().includes(q)||(st.number||"").includes(q)||(st.github||"").toLowerCase().includes(q)).map(st=>{
    let tds="<td class='stu' title='"+esc(st.name)+"'>"+esc(st.name||"(blank)")+(st.github?" <span class='pill'>@"+esc(st.github)+"</span>":"")+"</td><td class='mut'>"+esc(st.number||"-")+"</td>";
    cols.forEach(a=>{
@@ -596,34 +632,34 @@ function openNote(s,skey,aid){
  const a=s.assignments.find(x=>x.id===aid);
  const max=a.totalPoints ?? a.autoPoints ?? r.total;
  const val=r.kind==="held"?(r.proposed+"/"+max+" (held - review)"):r.kind==="manual"?"manual":(r.canvasPts+"/"+max);
- p.innerHTML="<button class='x'>×</button><h3>"+esc(st.name)+" - "+esc(aid)+"</h3><div class='sub'>"+esc(st.number||"")+" · @"+esc(st.github||"")+" · repo "+esc(r.repo)+" @"+esc(r.sha)+"</div>"+
+ p.innerHTML="<button class='x'>×</button><h3>"+esc(st.name)+" - "+esc(aid)+"</h3><div class='muted'>"+esc(st.number||"")+" · @"+esc(st.github||"")+" · repo "+esc(r.repo)+" @"+esc(r.sha)+"</div>"+
   "<div class='legend'><span>Automated: <b>"+r.raw+"</b></span><span>Canvas: <b>"+val+"</b></span></div>"+
-  "<pre>"+esc(r.note||"(no written feedback)")+"</pre>";
+  "<pre class='code-block prompt'>"+esc(r.note||"(no written feedback)")+"</pre>";
  d.append(p); document.body.append(d);
  const close=()=>d.remove(); p.querySelector(".x").onclick=close; d.onclick=e=>{if(e.target===d)close()};
 }
 
 function canvasPanel(s){
- const card=el("div","card");
- card.append(el("h2",null,"Canvas preview - what a push would do"));
- const bd=el("div","bd scroll");
- const t=el("table");
+ const card=el("div","card"); card.dataset.pad="sm";
+ card.append(el("h2","card__title","Canvas preview - what a push would do"));
+ const bd=el("div","table-scroll");
+ const t=el("table","table");
  t.innerHTML="<tr><th>Activity</th><th>Max</th><th>Graded</th><th>Status</th><th>Avg (of graded)</th></tr>"+
  s.assignments.map(a=>{
    const rs=s.students.map(st=>st.activities[a.id]).filter(Boolean);
    const max=a.totalPoints ?? a.autoPoints ?? "tests";
    let status,avgv;
-   if(a.manual){status="<span class='b manual'>manual - skipped</span>";}
-   else if(a.aiGraded){status="<span class='b held'>held for review</span>";}
-   else{status="<span class='b push'>auto-push"+(a.locked?" · locked":"")+"</span>";}
+   if(a.manual){status="<span class='badge' data-tone='muted'>manual - skipped</span>";}
+   else if(a.aiGraded){status="<span class='badge' data-tone='held'>held for review</span>";}
+   else{status="<span class='badge' data-tone='good'>auto-push"+(a.locked?" · locked":"")+"</span>";}
    const vals=rs.map(r=>a.aiGraded?r.proposed:r.canvasPts).filter(v=>v!=null);
    avgv=vals.length?(Math.round(vals.reduce((x,y)=>x+y,0)/vals.length*10)/10):"-";
    return "<tr><td><b>"+esc(a.id)+"</b>"+(a.feedback?" <span class=pill>"+a.feedback+"</span>":"")+"</td><td>"+max+"</td><td>"+rs.length+"</td><td>"+status+"</td><td>"+avgv+"</td></tr>";
  }).join("");
- bd.append(t);
- const note=el("div","mut"); note.style.marginTop="10px"; note.style.fontSize="12px";
- note.innerHTML="Held (AI) activities are never auto-pushed - deliver them via publish after you review the notes. The exact push counts come from <code>canvas-push --check</code> (the prompt runs it).";
- bd.append(note); card.append(bd); return card;
+ bd.append(t); card.append(bd);
+ const note=el("blockquote","callout");
+ note.innerHTML="Held (AI) activities are never auto-pushed - deliver them via publish after you review the notes. The exact push counts come from <code class='code-inline'>canvas-push --check</code> (the prompt runs it).";
+ card.append(note); return card;
 }
 
 function showPrompt(s){
@@ -650,7 +686,7 @@ s.dir+"\\n\\n"+
 "6. VERIFY: re-read the push report; confirm pushed count == matched students × pushable activities, no new unmatched, and spot-check 3 students' Canvas values against gradebook/grades.csv.\\n\\n"+
 "## Reminder\\nHeld activities ("+(held.join(", ")||"none")+") stay out of this push. To deliver those to students later: review gradebook/notes/, set \\"publish\\": true on the ready ones, and run publish.yml.\\n";
  const d=el("div","drawer on"); const p=el("div","dp");
- p.innerHTML="<button class='x'>×</button><h3>Apply-grades prompt - "+esc(s.section)+"</h3><div class='sub'>Copy this into a chat with your grading assistant.</div><div style='margin:10px 0'><button class='act' id='cp'>Copy</button></div><pre id='ptxt'>"+esc(txt)+"</pre>";
+ p.innerHTML="<button class='x'>×</button><h3>Apply-grades prompt - "+esc(s.section)+"</h3><div class='muted'>Copy this into a chat with your grading assistant.</div><div style='margin:10px 0'><button class='btn' data-size='sm' id='cp'>Copy</button></div><pre class='code-block prompt' id='ptxt'>"+esc(txt)+"</pre>";
  d.append(p); document.body.append(d);
  const close=()=>d.remove(); p.querySelector(".x").onclick=close; d.onclick=e=>{if(e.target===d)close()};
  $("#cp").onclick=()=>{navigator.clipboard.writeText(txt).then(()=>{$("#cp").textContent="Copied ✓"})};
@@ -689,7 +725,7 @@ function showDeliver(s){
 "5. On my \\"go\\": re-run with --execute.\\n"+
 "6. VERIFY: pushed count == matched students x pushed activities; spot-check 2-3 students' Canvas values and their delivered GRADES.md/FEEDBACK.md against gradebook/grades.csv; confirm no held or manual activity was delivered.\\n";
  const d=el("div","drawer on"); const p=el("div","dp");
- p.innerHTML="<button class='x'>×</button><h3>Deliver to Canvas + workspaces - "+esc(s.section)+"</h3><div class='sub'>"+graded.length+" deterministic activit(y/ies) to push · "+pub.length+" to publish to workspaces · AI/held + manual excluded</div><div style='margin:10px 0'><button class='act' id='cp'>Copy prompt</button></div><pre id='ptxt'>"+esc(txt)+"</pre>";
+ p.innerHTML="<button class='x'>×</button><h3>Deliver to Canvas + workspaces - "+esc(s.section)+"</h3><div class='muted'>"+graded.length+" deterministic activit(y/ies) to push · "+pub.length+" to publish to workspaces · AI/held + manual excluded</div><div style='margin:10px 0'><button class='btn' data-size='sm' id='cp'>Copy prompt</button></div><pre class='code-block prompt' id='ptxt'>"+esc(txt)+"</pre>";
  d.append(p); document.body.append(d);
  const close=()=>d.remove(); p.querySelector(".x").onclick=close; d.onclick=e=>{if(e.target===d)close()};
  $("#cp").onclick=()=>navigator.clipboard.writeText(txt).then(()=>$("#cp").textContent="Copied ✓");

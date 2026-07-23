@@ -32,19 +32,36 @@ the dashboard `<style>`:
   file, no CDN or node_modules at view time).
 - `styles/grain.css` - the grade-as-signal MECHANISM: `[data-grade="grain"]`,
   `.field` (grain at rest, clean on focus), `[data-commit="pending"]`.
+- `styles/global.css` - grain's base/skin: the paper background and grain overlay,
+  base typography, links, `.muted`, the focus ring.
 - `styles/themes/baguette.css` - the active flavor (crisp near-white / near-black
   with a soft-blue accent), applied via `data-theme="baguette"` on the root.
   Sourdough is grain's hueless default; grader-ui opts into Baguette. Light and dark
   still follow grain's `data-color-scheme` axis.
+- `components/**/*.css` - the REAL component CSS for every grain component the
+  dashboard composes (the `GRAIN_COMPONENTS` list in `src/build-dashboard.mjs`).
+  The dashboard does not mimic grain's components with lookalike CSS; it ships
+  grain's own stylesheets and uses grain's own classes: `.card`, `.stat`,
+  `.table`/`.table-scroll`, `.badge`, `.btn`, `.field`/`.field__input`/`.field__select`,
+  `.meter`, `.tab`/`.tab-bar`, `.callout`, `.code-block`, `.made-with`. Variants ride
+  data-attributes, per grain's conventions.
+
+The fleet byline (`made with GRAIN by tjakoen`) is mounted last in `<body>` via the
+`madeWith()` string helper from `@tjakoen/grain/scripts/made-with.js`, with
+`made-with.css` in the shipped set, so provenance reads the same as every other
+GRAIN app.
 
 The grade cells (green pass to red fail) are grader-ui's own, not grain's, since
 grain is monochrome by doctrine. Their tint is scheme-aware (`curScheme()` reads
 the live `data-color-scheme`, so a manual theme toggle recolors them, and dark uses
 a softer hsl so the colors do not go muddy).
 
-grader-ui adds only a thin bridge (its layout aliases like `--bg`, `--acc` mapped
-onto grain's real tokens) plus the few things grain is monochrome about on
-purpose but a grading matrix genuinely needs (status hues, syntax colors). Dark
+grader-ui's own CSS (the block after `${GRAIN}` in `CSS()`) is limited to two things:
+layout/composition grain leaves to the parent (the wide page column, the stats grid,
+the review drawer, the matrix's sticky column) and the few things grain is monochrome
+about on purpose but a grading matrix genuinely needs (status hues on `.badge` via a
+product `data-tone` attribute, heat cells, syntax colors). Tokens only - it reads
+`var(--color-*)` / `--space-*` / `--text-*` and never re-declares grain's values. Dark
 mode follows grain's `data-color-scheme` axis.
 
 ## Rules for the agent

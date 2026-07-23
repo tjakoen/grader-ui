@@ -8,7 +8,7 @@
     "grader-dashboard": "src/build-dashboard.mjs"
   },
   "dependencies": {
-    "@tjakoen/grain": "^0.1.0"
+    "@tjakoen/grain": "^0.1.8"
   },
   "scripts": {
     "build": "node src/build-dashboard.mjs",
