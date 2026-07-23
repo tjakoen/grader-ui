@@ -16,6 +16,8 @@
     "fetch:code": "node src/fetch-code.mjs",
     "audit": "node src/audit-students.mjs",
     "fix": "node src/apply-fixes.mjs",
-    "blanks": "node src/check-blanks.mjs"
+    "blanks": "node src/check-blanks.mjs",
+    "bake": "node scripts/bake-theme.mjs",
+    "dev": "node scripts/bake-theme.mjs && npx serve site"
   }
 }
