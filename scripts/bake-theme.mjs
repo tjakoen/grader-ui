@@ -3,8 +3,8 @@
 // embedded Redaction fonts) AND the REAL component CSS for every grain component the
 // app composes, from the installed @tjakoen/grain package into site/theme.css, so the
 // Pages site stays self-contained (no CDN, no node_modules at view time).
-// Same recipe src/build-dashboard.mjs uses for the local build; grain stays the source
-// of truth. Keep the page-stylesheet order and the GRAIN_COMPONENTS list in sync there.
+// grain stays the source of truth: never hardcode its tokens/classes back into the
+// app — change the look in grain and bump the dep. This is the repo's only build step.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,9 +12,9 @@ import { fileURLToPath } from "node:url";
 const grainFile = p => fs.readFileSync(fileURLToPath(import.meta.resolve("@tjakoen/grain/" + p)), "utf8");
 const grainFont = f => "data:font/woff2;base64," + fs.readFileSync(fileURLToPath(import.meta.resolve("@tjakoen/grain/fonts/" + f))).toString("base64");
 
-// The REAL component CSS for every grain component the app composes (mirrors
-// src/build-dashboard.mjs). Loaded from the installed package and inlined so the
-// hosted shell carries every component class the app now uses, offline.
+// The REAL component CSS for every grain component the app composes. Loaded from the
+// installed package and inlined so the hosted shell carries every component class the
+// app uses, self-contained. Keep this list in sync with the classes site/app.mjs emits.
 const GRAIN_COMPONENTS = [
   "components/atoms/b-badge/b-badge.css",         // .badge — kind/status/decision tags
   "components/atoms/b-button/b-button.css",       // .btn — every action

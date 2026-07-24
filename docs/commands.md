@@ -6,13 +6,18 @@ a repo itself: it emits a **prompt (an Intent)** that you paste into a Claude
 Code session, and the AI performs the writes as `git`/`gh` operations
 (**RenderOps**). Every Intent is human-reviewed before dispatch.
 
-## Data commands (you run these locally)
+## Getting the data (the hosted shell does this for you)
 
-| Command | Effect |
-| --- | --- |
-| `node src/build-dashboard.mjs` | Rebuild `out/grading-review.html` from the gradebooks. |
-| `node src/fetch-shots.mjs` | Cache design-activity screenshots into `out/dashboard-assets/`. |
-| `node src/fetch-code.mjs` | Cache submission source into `out/grading-review-code.js`. |
+There are no local build/fetch commands. The dashboard at
+**https://tjakoen.github.io/grader-ui/** pulls everything live from the GitHub API
+in your browser: gradebooks on load, and screenshots / submission code on demand as
+you open each review. **↻ Refresh** re-fetches. See [usage.md](usage.md) for the
+Settings (repo URLs + PAT) that authorize those reads.
+
+The only build step in this repo is `npm run bake`, which bakes the GRAIN theme +
+component CSS from `@tjakoen/grain` into `site/theme.css` (run automatically by the
+Pages deploy). The `src/` CLIs (`npm run audit` / `fix` / `blanks`) are local
+data-hygiene tools, not part of the review flow.
 
 ## Intents (the dashboard generates these; the AI executes them)
 

@@ -20,16 +20,16 @@ it to clean type.
 
 ## Where the theme comes from (do not fork it)
 
-`src/build-dashboard.mjs` resolves grain's CSS from the installed package with
-`import.meta.resolve('@tjakoen/grain/styles/...')`, reads it, and inlines it into
-the dashboard `<style>`:
+`scripts/bake-theme.mjs` (`npm run bake`) resolves grain's CSS from the installed
+package with `import.meta.resolve('@tjakoen/grain/styles/...')`, reads it, and
+concatenates it into `site/theme.css`, which the Pages shell links:
 
 - `styles/variables.css` - the Sourdough tokens (paper, ink, the `--font-smooth`
   / `--font-grain` / `--font-accent` grade families, spacing, radius) and the
   light/dark scheme. Its optional flavor `@import`s are stripped and its
   `@font-face` `url("/fonts/*.woff2")` are rewritten to embedded `data:` URIs, so
-  the dashboard is one offline file (it holds student PII and opens as a local
-  file, no CDN or node_modules at view time).
+  the baked stylesheet is self-contained (no CDN or node_modules at view time — the
+  deployed page is a static shell).
 - `styles/grain.css` - the grade-as-signal MECHANISM: `[data-grade="grain"]`,
   `.field` (grain at rest, clean on focus), `[data-commit="pending"]`.
 - `styles/global.css` - grain's base/skin: the paper background and grain overlay,
@@ -39,7 +39,7 @@ the dashboard `<style>`:
   Sourdough is grain's hueless default; grader-ui opts into Baguette. Light and dark
   still follow grain's `data-color-scheme` axis.
 - `components/**/*.css` - the REAL component CSS for every grain component the
-  dashboard composes (the `GRAIN_COMPONENTS` list in `src/build-dashboard.mjs`).
+  dashboard composes (the `GRAIN_COMPONENTS` list in `scripts/bake-theme.mjs`).
   The dashboard does not mimic grain's components with lookalike CSS; it ships
   grain's own stylesheets and uses grain's own classes: `.card`, `.stat`,
   `.table`/`.table-scroll`, `.badge`, `.btn`, `.field`/`.field__input`/`.field__select`,

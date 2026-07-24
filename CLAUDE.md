@@ -8,13 +8,15 @@
 
 ## What this is
 
-grader-ui is a local review surface for the [GitHub-Native Course Platform](https://github.com/tjakoen/github-native-course-platform).
-It reads the teacher repos' gradebooks, builds a static grading-review dashboard, and generates the
-prompts an AI runs to apply grading decisions (write grades, publish feedback, push to Canvas). The
-human reviews and decides; the AI does the writing. The single most important thing to know before
-touching it: **it never writes to a repo itself.** It emits a prompt (an intent) that a human runs in
-a Claude Code session. That review gate is the whole design, so keep the mutation on the AI's side of
-a human decision.
+grader-ui is a hosted review surface for the [GitHub-Native Course Platform](https://github.com/tjakoen/github-native-course-platform).
+It is a **data-free GitHub Pages shell** (`site/`) that reads the teacher repos' gradebooks live from
+the GitHub API in the browser, shows one grading-review dashboard, and generates the prompts an AI
+runs to apply grading decisions (write grades, publish feedback, push to Canvas). The human reviews
+and decides; the AI does the writing. The single most important thing to know before touching it:
+**it never writes to a repo itself.** It emits a prompt (an intent) that a human runs in a Claude
+Code session. That review gate is the whole design, so keep the mutation on the AI's side of a human
+decision. (The local static build was retired 2026-07-24 in favor of the hosted shell; the
+maintenance CLIs under `src/` — audit/fix/blanks — stay.)
 
 ## How I work here (non-negotiables)
 
@@ -26,9 +28,9 @@ The full rulebook is **[AI-DEVELOPMENT.md](https://tjakoen.github.io/standards/a
 - **AI multiplies, it doesn't add.** The AI types; I keep the judgment, the architecture, the final
   call. If I can't explain it, I didn't build it.
 - **Definition of done = code + docs synced + green gate.** For this repo the gate is `npm install`
-  (the build imports `@tjakoen/grain`), `node --check lib/config.mjs src/*.mjs`, and a clean
-  `node src/build-dashboard.mjs` (it must still build the dashboard from a real `classes/`). Not one
-  of these, all of them.
+  (it imports `@tjakoen/grain`), `node --check lib/config.mjs src/*.mjs site/*.mjs site/lib/*.mjs`,
+  and a clean `npm run bake` (the theme must build from the installed grain package into
+  `site/theme.css`). Not one of these, all of them.
 - **Write the decision down.** Keep a short record of *why* non-obvious choices were made so the next
   session inherits the reasoning.
 - **Hand off when a task finishes.** Gate green, committed, decisions recorded, then emit a compact
